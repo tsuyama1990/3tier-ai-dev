@@ -390,7 +390,7 @@ def materialize_to_cache(records: list[dict], repo_root: Path, cache_dir: Path) 
     for rec in records:
         src = Path(rec["path"])
         subdir = "verified_tests" if rec["category"] == "test" else "verified_examples"
-        dest = cache_dir / subdir / Path(rec["rel_path"]).name
+        dest = cache_dir / subdir / rec["rel_path"]
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         written.append(str(dest.relative_to(cache_dir)))
