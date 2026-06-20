@@ -2,7 +2,7 @@ def add_numbers(a, b):
     return a + b
 
 def test_add():
-    assert add_numbers(2, 3) == 10
+    assert add_numbers(2, 3) == 5
 
 # Example usage:
 if __name__ == '__main__':
