@@ -52,50 +52,80 @@ from typing import Optional
 KNOWLEDGE_CACHE = Path.home() / ".knowledge-cache"
 
 # External hard dependencies — make execution impossible in typical local env
-_EXTERNAL_HARD_DEPS = frozenset({
-    "mpi4py", "lammps", "vasp", "gpaw", "siesta", "abinit",
-    "cp2k", "elk", "exciting", "fleur", "nwchem", "psi4",
-    "pyscf", "turbomole", "castep", "dftb", "dftbplus",
-    "phonopy", "phono3py", "espresso", "wannier90",
-})
+_EXTERNAL_HARD_DEPS = frozenset(
+    {
+        "mpi4py",
+        "lammps",
+        "vasp",
+        "gpaw",
+        "siesta",
+        "abinit",
+        "cp2k",
+        "elk",
+        "exciting",
+        "fleur",
+        "nwchem",
+        "psi4",
+        "pyscf",
+        "turbomole",
+        "castep",
+        "dftb",
+        "dftbplus",
+        "phonopy",
+        "phono3py",
+        "espresso",
+        "wannier90",
+    }
+)
 
 # Pytest infrastructure attribute names that indicate test plumbing, not API docs
-_PYTEST_INFRA_ATTRS = frozenset({
-    "fixture", "mark", "skip", "parametrize", "raises",
-    "warns", "approx", "xfail",
-})
+_PYTEST_INFRA_ATTRS = frozenset(
+    {
+        "fixture",
+        "mark",
+        "skip",
+        "parametrize",
+        "raises",
+        "warns",
+        "approx",
+        "xfail",
+    }
+)
 
 # Subprocess/shell invocation attributes
-_SUBPROCESS_ATTRS = frozenset({"run", "call", "Popen", "check_output",
-                                "check_call", "system", "popen"})
+_SUBPROCESS_ATTRS = frozenset(
+    {"run", "call", "Popen", "check_output", "check_call", "system", "popen"}
+)
 
 # Scoring weights (see implementation_plan.md)
-_W_TARGET_IMPORT    =  2.0
-_W_INSTANTIATION    =  1.5
-_W_HAS_MAIN         =  1.0
-_W_SWEET_LINES      =  1.0   # 20–150 lines
-_W_EXAMPLE_DIR      =  0.5
-_W_HARD_DEP         = -3.0
-_W_INTERNAL_DEP     = -2.0
-_W_SUBPROCESS_CALL  = -1.0
-_W_PYTEST_INFRA     = -1.5
-_W_MOCK_USAGE       = -1.0
+_W_TARGET_IMPORT = 2.0
+_W_INSTANTIATION = 1.5
+_W_HAS_MAIN = 1.0
+_W_SWEET_LINES = 1.0  # 20–150 lines
+_W_EXAMPLE_DIR = 0.5
+_W_HARD_DEP = -3.0
+_W_INTERNAL_DEP = -2.0
+_W_SUBPROCESS_CALL = -1.0
+_W_PYTEST_INFRA = -1.5
+_W_MOCK_USAGE = -1.0
 
-_MAX_STATIC_SCORE   = 10.0   # normalization denominator
-_STATIC_THRESHOLD   = 2.0    # Stage 2 hard filter
-_SNIPPET_MAX_LINES  = 80
-_EXECUTION_TIMEOUT  = 3      # seconds
-_FINAL_THRESHOLD    = 0.9    # minimum final_score to keep in cache
+_MAX_STATIC_SCORE = 10.0  # normalization denominator
+_STATIC_THRESHOLD = 2.0  # Stage 2 hard filter
+_SNIPPET_MAX_LINES = 80
+_EXECUTION_TIMEOUT = 3  # seconds
+_FINAL_THRESHOLD = 0.9  # minimum final_score to keep in cache
 
 
 # ── Data models ───────────────────────────────────────────────────────────────
 
+
 @dataclass
 class StaticScore:
     """Result of Stage 1 static AST analysis for one file."""
+
     file_path: Path
     rel_path: str
-    category: str               # 'test' | 'example'
+    category: str  # 'test' | 'example'
     target_imports: int = 0
     instantiations: int = 0
     has_main: bool = False
@@ -120,16 +150,18 @@ class StaticScore:
 @dataclass
 class RunResult:
     """Result of Stage 3 isolated execution."""
-    result_type: str    # CLEAN | EXTERNAL_IMPORT_ERROR | TARGET_IMPORT_ERROR | TIMEOUT | RUNTIME_ERROR
+
+    result_type: str  # CLEAN | EXTERNAL_IMPORT_ERROR | TARGET_IMPORT_ERROR | TIMEOUT | RUNTIME_ERROR
     runtime_score: float
     exit_code: Optional[int] = None
-    stderr_snippet: str = ""    # first 300 chars of stderr
+    stderr_snippet: str = ""  # first 300 chars of stderr
     snippet_lines: int = 0
 
 
 @dataclass
 class TraceRecord:
     """Final per-file record written into smoke_trace_report.json."""
+
     rel_path: str
     category: str
     static_raw_score: float
@@ -144,6 +176,7 @@ class TraceRecord:
 
 
 # ── Stage 1: Static Analyzer ──────────────────────────────────────────────────
+
 
 def _is_internal(module: str, target_pkg: str) -> bool:
     """Return True if module path indicates internal/private target code."""
@@ -175,8 +208,9 @@ def _dotted_name(node) -> Optional[str]:
     return None
 
 
-def analyze_static(file_path: Path, target_pkg: str,
-                   rel_path: str, category: str) -> StaticScore:
+def analyze_static(
+    file_path: Path, target_pkg: str, rel_path: str, category: str
+) -> StaticScore:
     """
     Walk the AST of `file_path` and compute a StaticScore.
 
@@ -211,7 +245,6 @@ def analyze_static(file_path: Path, target_pkg: str,
     api_surface_set: set[str] = set()
 
     for node in ast.walk(tree):
-
         # ── Import statements ──────────────────────────────────────────────
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -229,7 +262,7 @@ def analyze_static(file_path: Path, target_pkg: str,
 
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            root   = module.split(".")[0] if module else ""
+            root = module.split(".")[0] if module else ""
 
             if root == target_pkg:
                 score.target_imports += 1
@@ -260,7 +293,9 @@ def analyze_static(file_path: Path, target_pkg: str,
                 if root_local in target_name_to_fqn:
                     # Resolve local alias → FQN
                     fqn_root = target_name_to_fqn[root_local]
-                    fqn = fqn_root + ("." + ".".join(parts[1:]) if len(parts) > 1 else "")
+                    fqn = fqn_root + (
+                        "." + ".".join(parts[1:]) if len(parts) > 1 else ""
+                    )
                     api_surface_set.add(fqn)
 
                     # Instantiation: capital first letter of the leaf name
@@ -272,25 +307,35 @@ def analyze_static(file_path: Path, target_pkg: str,
             if isinstance(func, ast.Attribute):
                 val = func.value
                 if isinstance(val, ast.Name):
-                    if val.id in ("subprocess", "os") and func.attr in _SUBPROCESS_ATTRS:
+                    if (
+                        val.id in ("subprocess", "os")
+                        and func.attr in _SUBPROCESS_ATTRS
+                    ):
                         score.subprocess_calls += 1
                     # pytest infrastructure
                     if val.id == "pytest" and func.attr in _PYTEST_INFRA_ATTRS:
                         score.pytest_infra_signals += 1
                 elif isinstance(val, ast.Attribute):
-                    if (isinstance(val.value, ast.Name) and val.value.id == "pytest"
-                            and val.attr in _PYTEST_INFRA_ATTRS):
+                    if (
+                        isinstance(val.value, ast.Name)
+                        and val.value.id == "pytest"
+                        and val.attr in _PYTEST_INFRA_ATTRS
+                    ):
                         score.pytest_infra_signals += 1
 
         # ── if __name__ == '__main__': ─────────────────────────────────────
         elif isinstance(node, ast.If):
             t = node.test
-            if (isinstance(t, ast.Compare)
-                    and isinstance(t.left, ast.Name) and t.left.id == "__name__"
-                    and len(t.ops) == 1 and isinstance(t.ops[0], ast.Eq)
-                    and len(t.comparators) == 1
-                    and isinstance(t.comparators[0], ast.Constant)
-                    and t.comparators[0].value == "__main__"):
+            if (
+                isinstance(t, ast.Compare)
+                and isinstance(t.left, ast.Name)
+                and t.left.id == "__name__"
+                and len(t.ops) == 1
+                and isinstance(t.ops[0], ast.Eq)
+                and len(t.comparators) == 1
+                and isinstance(t.comparators[0], ast.Constant)
+                and t.comparators[0].value == "__main__"
+            ):
                 score.has_main = True
 
     score.api_surface = sorted(api_surface_set)
@@ -314,19 +359,24 @@ def analyze_static(file_path: Path, target_pkg: str,
 
 # ── Stage 2: Prioritization ───────────────────────────────────────────────────
 
+
 def prioritize(scores: list[StaticScore], top_n: int = 30) -> list[StaticScore]:
     """
     Filter by static threshold and return top-N by raw_score.
     Files with raw_score < _STATIC_THRESHOLD are unconditionally excluded.
     """
-    passed = [s for s in scores if s.raw_score >= _STATIC_THRESHOLD and not s.parse_error]
+    passed = [
+        s for s in scores if s.raw_score >= _STATIC_THRESHOLD and not s.parse_error
+    ]
     return sorted(passed, key=lambda s: s.raw_score, reverse=True)[:top_n]
 
 
 # ── Stage 3a: Snippet Extraction ──────────────────────────────────────────────
 
-def extract_snippet(source: str, target_pkg: str,
-                    max_lines: int = _SNIPPET_MAX_LINES) -> str:
+
+def extract_snippet(
+    source: str, target_pkg: str, max_lines: int = _SNIPPET_MAX_LINES
+) -> str:
     """
     Extract a minimal runnable snippet from `source`.
 
@@ -364,14 +414,18 @@ def extract_snippet(source: str, target_pkg: str,
                     import_line_nums.add(ln)
         elif isinstance(node, ast.If):
             t = node.test
-            if (isinstance(t, ast.Compare)
-                    and isinstance(t.left, ast.Name) and t.left.id == "__name__"
-                    and len(t.ops) == 1 and isinstance(t.ops[0], ast.Eq)
-                    and len(t.comparators) == 1
-                    and isinstance(t.comparators[0], ast.Constant)
-                    and t.comparators[0].value == "__main__"):
+            if (
+                isinstance(t, ast.Compare)
+                and isinstance(t.left, ast.Name)
+                and t.left.id == "__name__"
+                and len(t.ops) == 1
+                and isinstance(t.ops[0], ast.Eq)
+                and len(t.comparators) == 1
+                and isinstance(t.comparators[0], ast.Constant)
+                and t.comparators[0].value == "__main__"
+            ):
                 main_start = node.lineno
-                main_end   = node.end_lineno
+                main_end = node.end_lineno
 
     result_lines: list[str] = []
 
@@ -392,29 +446,44 @@ def extract_snippet(source: str, target_pkg: str,
         # whose end_lineno fits within the remaining budget.  This guarantees
         # we never cut a function/loop body mid-way, avoiding guaranteed
         # SyntaxErrors in the isolated execution stage.
-        budget    = max_lines - len(result_lines)
-        last_safe = 0   # last line (1-indexed) safe to include
+        budget = max_lines - len(result_lines)
+        last_safe = 0  # last line (1-indexed) safe to include
 
         for stmt in ast.iter_child_nodes(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
+            if isinstance(stmt, (ast.Import, ast.ImportFrom)):
                 continue  # already in result_lines
             if not (hasattr(stmt, "lineno") and hasattr(stmt, "end_lineno")):
                 continue
             if stmt.end_lineno <= budget:
                 last_safe = stmt.end_lineno
             else:
-                break   # statements are ordered; once we exceed budget, stop
+                break  # statements are ordered; once we exceed budget, stop
 
         if last_safe > 0:
             # Include all lines from 1 to last_safe (minus already-included imports)
-            included_line_set = import_line_nums   # already in result_lines
+            included_line_set = import_line_nums  # already in result_lines
             for ln in range(1, last_safe + 1):
                 if ln not in included_line_set:
                     result_lines.append(lines[ln - 1])
-        # else: budget too small; fallback below handles it
+        else:
+            # Monolithic node fallback:
+            # All top-level statements exceed budget; add the first statement
+            # entirely to preserve syntactic completeness.
+            # If ast.parse() validation later fails, the raw head fallback applies.
+            for stmt in ast.iter_child_nodes(tree):
+                if hasattr(stmt, "lineno") and hasattr(stmt, "end_lineno"):
+                    for ln in range(stmt.lineno, stmt.end_lineno + 1):
+                        if ln not in import_line_nums:
+                            result_lines.append(lines[ln - 1])
+                    break  # first statement only
 
-    # Fallback: if we harvested very little, just use raw head
-    if len(result_lines) < 5:
+    # Fallback: if we have no non-import content, use raw head
+    non_import_lines = [
+        l
+        for l in result_lines
+        if l.strip() and not l.lstrip().startswith(("import ", "from "))
+    ]
+    if not non_import_lines:
         return "\n".join(lines[:max_lines])
 
     snippet = "\n".join(result_lines)
@@ -430,8 +499,10 @@ def extract_snippet(source: str, target_pkg: str,
 
 # ── Stage 3b: Isolated Execution ──────────────────────────────────────────────
 
-def run_snippet(snippet: str, target_pkg: str, python_bin: Path,
-                timeout: int = _EXECUTION_TIMEOUT) -> RunResult:
+
+def run_snippet(
+    snippet: str, target_pkg: str, python_bin: Path, timeout: int = _EXECUTION_TIMEOUT
+) -> RunResult:
     """
     Execute `snippet` in an isolated subprocess using `python_bin`.
 
@@ -454,17 +525,23 @@ def run_snippet(snippet: str, target_pkg: str, python_bin: Path,
             timeout=timeout,
             stdin=subprocess.DEVNULL,
         )
-        stderr = res.stderr[:500]   # cap for storage
+        stderr = res.stderr[:500]  # cap for storage
 
         if res.returncode == 0:
             return RunResult("CLEAN", 1.0, res.returncode, "", n_lines)
 
         # Classify import errors
         if "ImportError" in res.stderr or "ModuleNotFoundError" in res.stderr:
-            if (f"No module named '{target_pkg}'" in res.stderr
-                    or f'No module named "{target_pkg}"' in res.stderr):
-                return RunResult("TARGET_IMPORT_ERROR", 0.0, res.returncode, stderr, n_lines)
-            return RunResult("EXTERNAL_IMPORT_ERROR", 0.9, res.returncode, stderr, n_lines)
+            if (
+                f"No module named '{target_pkg}'" in res.stderr
+                or f'No module named "{target_pkg}"' in res.stderr
+            ):
+                return RunResult(
+                    "TARGET_IMPORT_ERROR", 0.0, res.returncode, stderr, n_lines
+                )
+            return RunResult(
+                "EXTERNAL_IMPORT_ERROR", 0.9, res.returncode, stderr, n_lines
+            )
 
         return RunResult("RUNTIME_ERROR", 0.0, res.returncode, stderr, n_lines)
 
@@ -479,6 +556,7 @@ def run_snippet(snippet: str, target_pkg: str, python_bin: Path,
 
 
 # ── Main orchestrator ─────────────────────────────────────────────────────────
+
 
 def smoke_trace(
     cache_dir: Path,
@@ -496,6 +574,7 @@ def smoke_trace(
 
     Returns a structured report dict.
     """
+
     def log(msg: str):
         print(f"[Tracer] {msg}", file=sys.stderr)
 
@@ -512,8 +591,11 @@ def smoke_trace(
     }
 
     # Discover all .py files in the cache
-    all_files: list[tuple[Path, str]] = []   # (abs_path, category)
-    for subdir, category in [("verified_tests", "test"), ("verified_examples", "example")]:
+    all_files: list[tuple[Path, str]] = []  # (abs_path, category)
+    for subdir, category in [
+        ("verified_tests", "test"),
+        ("verified_examples", "example"),
+    ]:
         src_dir = cache_dir / subdir
         if src_dir.exists():
             for py in sorted(src_dir.rglob("*.py")):
@@ -539,7 +621,9 @@ def smoke_trace(
     candidates = prioritize(static_scores, top_n=top_n)
     candidate_paths = {s.file_path for s in candidates}
     report["after_static_filter"] = len(candidates)
-    log(f"  {len(candidates)} candidates pass static filter (raw_score ≥ {_STATIC_THRESHOLD})")
+    log(
+        f"  {len(candidates)} candidates pass static filter (raw_score ≥ {_STATIC_THRESHOLD})"
+    )
 
     # Stage 3: Snippet + Execution
     log("Stage 3: Snippet extraction + isolated execution …")
@@ -550,39 +634,50 @@ def smoke_trace(
         try:
             source = sc.file_path.read_text(encoding="utf-8", errors="replace")
         except Exception as exc:
-            records.append(TraceRecord(
-                rel_path=sc.rel_path, category=sc.category,
-                static_raw_score=sc.raw_score,
-                runtime_result="READ_ERROR", runtime_score=0.0,
-                final_score=0.0, snippet_lines=0, written=False,
-                error=str(exc),
-            ))
+            records.append(
+                TraceRecord(
+                    rel_path=sc.rel_path,
+                    category=sc.category,
+                    static_raw_score=sc.raw_score,
+                    runtime_result="READ_ERROR",
+                    runtime_score=0.0,
+                    final_score=0.0,
+                    snippet_lines=0,
+                    written=False,
+                    error=str(exc),
+                )
+            )
             continue
 
         snippet = extract_snippet(source, target_pkg)
-        run    = run_snippet(snippet, target_pkg, python_bin, timeout=timeout)
+        run = run_snippet(snippet, target_pkg, python_bin, timeout=timeout)
 
         # Final score = normalized static × runtime
-        static_norm  = min(sc.raw_score / _MAX_STATIC_SCORE, 1.0)
-        final_score  = round(static_norm * run.runtime_score, 3)
-        passed       = final_score >= _FINAL_THRESHOLD
+        static_norm = min(sc.raw_score / _MAX_STATIC_SCORE, 1.0)
+        final_score = round(static_norm * run.runtime_score, 3)
+        passed = final_score >= _FINAL_THRESHOLD
 
         if passed:
             keep_paths.add(sc.file_path)
 
-        log(f"  {'✅' if passed else '❌'} {sc.rel_path[:60]:<60} "
-            f"static={sc.raw_score:.1f} {run.result_type} final={final_score:.2f}")
+        log(
+            f"  {'✅' if passed else '❌'} {sc.rel_path[:60]:<60} "
+            f"static={sc.raw_score:.1f} {run.result_type} final={final_score:.2f}"
+        )
 
-        records.append(TraceRecord(
-            rel_path=sc.rel_path, category=sc.category,
-            static_raw_score=sc.raw_score,
-            runtime_result=run.result_type,
-            runtime_score=run.runtime_score,
-            final_score=final_score,
-            snippet_lines=run.snippet_lines,
-            written=passed and not dry_run,
-            api_surface=sc.api_surface,   # Q3: forward to Asset Synthesizer
-        ))
+        records.append(
+            TraceRecord(
+                rel_path=sc.rel_path,
+                category=sc.category,
+                static_raw_score=sc.raw_score,
+                runtime_result=run.result_type,
+                runtime_score=run.runtime_score,
+                final_score=final_score,
+                snippet_lines=run.snippet_lines,
+                written=passed and not dry_run,
+                api_surface=sc.api_surface,  # Q3: forward to Asset Synthesizer
+            )
+        )
 
     report["after_execution"] = len(keep_paths)
 
@@ -625,12 +720,15 @@ def smoke_trace(
         )
         log(f"Report written → {report_path}")
 
-    log(f"Done. {len(keep_paths)}/{len(candidates)} candidates passed "
-        f"(final_score ≥ {_FINAL_THRESHOLD})")
+    log(
+        f"Done. {len(keep_paths)}/{len(candidates)} candidates passed "
+        f"(final_score ≥ {_FINAL_THRESHOLD})"
+    )
     return report
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def find_venv_python(venv: Path) -> Optional[Path]:
     """Locate the python binary inside a .venv directory."""
@@ -642,6 +740,7 @@ def find_venv_python(venv: Path) -> Optional[Path]:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -668,23 +767,43 @@ Examples:
     )
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument(
-        "--manifest", metavar="FILE",
+        "--manifest",
+        metavar="FILE",
         help="JSON manifest from package_inspector.py (first package is processed)",
     )
     src.add_argument(
-        "--cache-dir", metavar="DIR",
+        "--cache-dir",
+        metavar="DIR",
         help="Path to the knowledge cache entry (e.g. ~/.knowledge-cache/ase/3.28.0)",
     )
-    p.add_argument("--target",  metavar="PKG", help="Target package name (required with --cache-dir)")
-    p.add_argument("--venv",    metavar="DIR", help="Path to .venv (required with --cache-dir)")
-    p.add_argument("--top-n",   metavar="N",   type=int, default=30,
-                   help="Maximum number of files to pass to execution stage (default: 30)")
-    p.add_argument("--timeout", metavar="SEC", type=int, default=_EXECUTION_TIMEOUT,
-                   help=f"Execution timeout in seconds (default: {_EXECUTION_TIMEOUT})")
-    p.add_argument("--dry-run", action="store_true",
-                   help="Score and report without modifying the cache")
-    p.add_argument("--compact", action="store_true",
-                   help="Emit compact JSON to stdout")
+    p.add_argument(
+        "--target",
+        metavar="PKG",
+        help="Target package name (required with --cache-dir)",
+    )
+    p.add_argument(
+        "--venv", metavar="DIR", help="Path to .venv (required with --cache-dir)"
+    )
+    p.add_argument(
+        "--top-n",
+        metavar="N",
+        type=int,
+        default=30,
+        help="Maximum number of files to pass to execution stage (default: 30)",
+    )
+    p.add_argument(
+        "--timeout",
+        metavar="SEC",
+        type=int,
+        default=_EXECUTION_TIMEOUT,
+        help=f"Execution timeout in seconds (default: {_EXECUTION_TIMEOUT})",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Score and report without modifying the cache",
+    )
+    p.add_argument("--compact", action="store_true", help="Emit compact JSON to stdout")
     return p
 
 
@@ -693,19 +812,21 @@ def main(argv=None):
 
     if args.manifest:
         mf = json.loads(Path(args.manifest).expanduser().read_text())
-        pkg      = mf["packages"][0]
-        target   = pkg["name"].lower()
-        version  = pkg["version"]
-        project  = Path(mf["project"])
-        venv     = project / ".venv"
+        pkg = mf["packages"][0]
+        target = pkg["name"].lower()
+        version = pkg["version"]
+        project = Path(mf["project"])
+        venv = project / ".venv"
         cache_dir = Path(pkg["cache_path"]).expanduser()
     else:
         if not (args.target and args.venv):
-            print("ERROR: --target and --venv are required with --cache-dir",
-                  file=sys.stderr)
+            print(
+                "ERROR: --target and --venv are required with --cache-dir",
+                file=sys.stderr,
+            )
             sys.exit(1)
-        target    = args.target
-        venv      = Path(args.venv).expanduser().resolve()
+        target = args.target
+        venv = Path(args.venv).expanduser().resolve()
         cache_dir = Path(args.cache_dir).expanduser().resolve()
 
     python_bin = find_venv_python(venv)
@@ -729,7 +850,7 @@ def main(argv=None):
         dry_run=args.dry_run,
     )
 
-    indent  = None if args.compact else 2
+    indent = None if args.compact else 2
     summary = {k: v for k, v in report.items() if k != "files"}
     print(json.dumps(summary, indent=indent, ensure_ascii=False))
 
