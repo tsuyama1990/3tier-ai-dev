@@ -1,5 +1,6 @@
 import subprocess
 from mcp.server.fastmcp import FastMCP
+from orchestrator import REAL_AIDER
 from orchestrator_api import run_3tier_dev
 
 mcp = FastMCP("EKP-Forge")
@@ -9,7 +10,7 @@ def execute_simple_aider(prompt: str, target_files: list[str], model: str = None
     """
     Execute aider with a simple message without static analysis or self-repair.
     """
-    cmd = ["aider", "--message", prompt, "--yes"]
+    cmd = [REAL_AIDER, "--message", prompt, "--yes"]
     if model:
         cmd.extend(["--model", model])
     cmd.extend(target_files)
