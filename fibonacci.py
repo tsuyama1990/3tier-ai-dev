@@ -1,21 +1,5 @@
 def fibonacci(n: int) -> list[int]:
-    """
-    Returns the first n Fibonacci numbers as a list.
-    
-    Args:
-        n (int): The number of Fibonacci numbers to generate.
-        
-    Returns:
-        list[int]: A list containing the first n Fibonacci numbers.
-        
-    Examples:
-        >>> fibonacci(10)
-        [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
-        >>> fibonacci(0)
-        []
-        >>> fibonacci(1)
-        [0]
-    """
+    """Returns the first n Fibonacci numbers as a list."""
     if n <= 0:
         return []
     elif n == 1:
@@ -27,3 +11,6 @@ def fibonacci(n: int) -> list[int]:
         fib_sequence.append(next_value)
     
     return fib_sequence
+
+# Test the function
+assert fibonacci(10) == [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
