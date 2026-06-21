@@ -17,6 +17,11 @@ def run_3tier_dev(prompt, target_pkg, target_files, timeout=600):
     if lock_file.exists():
         return {"success": False, "status": "locked"}
 
+    # P1: Check if knowledge file exists for target_pkg
+    knowledge_file = Path(f".ai-knowledge/{target_pkg}.md")
+    if not knowledge_file.exists():
+        return {"success": False, "status": "knowledge_missing"}
+
     try:
         # Acquire lock
         lock_file.write_text(f"locked by run_3tier_dev process {os.getpid()}")
@@ -143,6 +148,16 @@ def run_3tier_dev(prompt, target_pkg, target_files, timeout=600):
                 }
                 
         orchestrator.log("Self-healing failed after max retries.")
+        
+        # P1: Git rollback on failure
+        orchestrator.log("Performing git rollback due to failure...")
+        try:
+            subprocess.run(["git", "reset", "--hard", "HEAD"], capture_output=True, check=False)
+            subprocess.run(["git", "clean", "-fd"], capture_output=True, check=False)
+            orchestrator.log("Git rollback completed.")
+        except Exception as e:
+            orchestrator.log(f"Git rollback failed: {str(e)}")
+        
         return {
             "success": False,
             "status": "failed",
