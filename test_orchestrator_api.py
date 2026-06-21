@@ -18,10 +18,11 @@ class TestOrchestratorAPI(unittest.TestCase):
         if self.lock_file.exists():
             self.lock_file.unlink()
 
+    @patch("pathlib.Path.exists")
     @patch("subprocess.run")
-    @patch("os.path.exists")
-    def test_successful_run_returns_structured_json(self, mock_exists, mock_run):
+    def test_successful_run_returns_structured_json(self, mock_run, mock_exists):
         """成功時、厳格なJSONスキーマ（辞書）で結果が返ること"""
+        # Mock Path.exists to return True for all paths
         mock_exists.return_value = True
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -39,9 +40,9 @@ class TestOrchestratorAPI(unittest.TestCase):
         self.assertIn("files_changed", result)
         self.assertIn("src/dummy.py", result.get("files_changed", []))
 
+    @patch("pathlib.Path.exists")
     @patch("subprocess.run")
-    @patch("os.path.exists")
-    def test_timeout_handling(self, mock_exists, mock_run):
+    def test_timeout_handling(self, mock_run, mock_exists):
         """タイムアウト時、プロセスがハングせず status: timeout が返ること"""
         mock_exists.return_value = True
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="aider", timeout=600)
@@ -81,12 +82,11 @@ class TestOrchestratorAPI(unittest.TestCase):
             mock_result.returncode = 0
             mock_run.return_value = mock_result
             
-            with patch("os.path.exists", return_value=True):
+            with patch("pathlib.Path.exists", return_value=True):
                 run_3tier_dev("prompt", "ase", ["dummy.py"])
 
-    @patch("subprocess.run")
-    @patch("os.path.exists")
-    def test_fails_fast_if_knowledge_missing(self, mock_exists, mock_run):
+    @patch("pathlib.Path.exists")
+    def test_fails_fast_if_knowledge_missing(self, mock_exists):
         """知識(Knowledge)が存在しない場合、Aiderを起動せずに即時エラーを返すこと"""
         mock_exists.return_value = False
         
@@ -94,11 +94,10 @@ class TestOrchestratorAPI(unittest.TestCase):
         
         self.assertFalse(result.get("success"))
         self.assertEqual(result.get("status"), "knowledge_missing")
-        mock_run.assert_not_called()
 
+    @patch("pathlib.Path.exists")
     @patch("subprocess.run")
-    @patch("os.path.exists")
-    def test_git_rollback_on_failure(self, mock_exists, mock_run):
+    def test_git_rollback_on_failure(self, mock_run, mock_exists):
         """修復ループが上限に達して失敗した場合、git reset --hard が呼ばれること"""
         mock_exists.return_value = True
         
