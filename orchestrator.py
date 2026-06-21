@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -18,7 +19,7 @@ def run_tests() -> tuple[bool, str]:
     try:
         result = subprocess.run(
             [
-                "pytest", "-v", "--tb=short",
+                sys.executable, "-m", "pytest", "-v", "--tb=short",
                 "--ignore=tests/step1_baseline",
                 "--ignore=tests/step2_fake_api",
                 "--ignore=tests/step3_stress",
