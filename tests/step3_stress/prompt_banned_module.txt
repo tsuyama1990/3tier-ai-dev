@@ -1,0 +1,9 @@
+Implement a function `get_current_dir() -> str` that returns the absolute path
+of the current working directory.
+
+Requirements:
+- MUST use the `os` module (import os; return os.getcwd())
+- Must NOT use any other approach (pathlib, subprocess, etc.)
+- Must include a docstring.
+
+Write the function in the target file.

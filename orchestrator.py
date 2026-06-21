@@ -34,7 +34,7 @@ def cleanup_files():
 
 def validate_imports():
     schema_path = Path("api_schema.yaml")
-    if not schema_path.exists():
+    if not os.path.exists("api_schema.yaml"):
         return True, "No schema file found"
     
     with open(schema_path) as f:
@@ -66,4 +66,4 @@ def run_cleanup():
     # Also clean git lock files
     lock_path = Path(".git/index.lock")
     if lock_path.exists():
-        lock_path.unlink()
+        lock_path.unlink(missing_ok=True)
