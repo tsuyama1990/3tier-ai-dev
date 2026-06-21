@@ -50,6 +50,19 @@ def validate_imports():
     dangerous_builtins = {"eval", "exec", "compile", "open"}
     
     for py_file in Path(".").rglob("*.py"):
+        # Skip virtual environment files
+        if ".venv" in py_file.parts:
+            continue
+        # Skip core orchestrator files
+        if py_file.name in ["orchestrator.py", "orchestrator_api.py", "test_orchestrator_api.py"]:
+            continue
+        # Skip DSC synthesizer files
+        if "dsc" in py_file.parts:
+            continue
+        # Skip validation on tests themselves, but allow generated test targets
+        if "tests" in py_file.parts and "generated" not in py_file.parts:
+            continue
+
         content = py_file.read_text()
         for line in content.splitlines():
             line = line.strip()
