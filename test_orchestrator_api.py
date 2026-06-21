@@ -79,7 +79,7 @@ class TestOrchestratorAPI(unittest.TestCase):
             
             run_3tier_dev("prompt", "ase", ["dummy.py"])
 
-@patch("subprocess.run")
+    @patch("subprocess.run")
     @patch("os.path.exists")
     def test_fails_fast_if_knowledge_missing(self, mock_exists, mock_run):
         """知識(Knowledge)が存在しない場合、Aiderを起動せずに即時エラーを返すこと"""
