@@ -88,7 +88,7 @@ def run_3tier_dev(prompt, target_pkg, target_files, timeout=600, model=None, ski
             orchestrator.log("Performing git rollback due to failure...")
             try:
                 subprocess.run(["git", "reset", "--hard", "HEAD"], capture_output=True, check=False)
-                subprocess.run(["git", "clean", "-fd"], capture_output=True, check=False)
+                subprocess.run(["git", "clean", "-fdx", "--exclude=.venv"], capture_output=True, check=False)
                 orchestrator.log("Git rollback completed.")
             except Exception as e:
                 orchestrator.log(f"Git rollback failed: {str(e)}")
@@ -124,7 +124,7 @@ def run_3tier_dev(prompt, target_pkg, target_files, timeout=600, model=None, ski
                 orchestrator.log("Performing git rollback due to failure...")
                 try:
                     subprocess.run(["git", "reset", "--hard", "HEAD"], capture_output=True, check=False)
-                    subprocess.run(["git", "clean", "-fd"], capture_output=True, check=False)
+                    subprocess.run(["git", "clean", "-fdx", "--exclude=.venv"], capture_output=True, check=False)
                     orchestrator.log("Git rollback completed.")
                 except Exception as e:
                     orchestrator.log(f"Git rollback failed: {str(e)}")
@@ -211,7 +211,7 @@ def run_3tier_dev(prompt, target_pkg, target_files, timeout=600, model=None, ski
         orchestrator.log("Performing git rollback due to failure...")
         try:
             subprocess.run(["git", "reset", "--hard", "HEAD"], capture_output=True, check=False)
-            subprocess.run(["git", "clean", "-fd"], capture_output=True, check=False)
+            subprocess.run(["git", "clean", "-fdx", "--exclude=.venv"], capture_output=True, check=False)
             orchestrator.log("Git rollback completed.")
         except Exception as e:
             orchestrator.log(f"Git rollback failed: {str(e)}")
