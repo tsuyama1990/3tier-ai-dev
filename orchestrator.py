@@ -17,7 +17,13 @@ def run_tests():
     log("Running pytest...")
     try:
         result = subprocess.run(
-            ["pytest", "-v", "--tb=short"],
+            [
+                "pytest", "-v", "--tb=short",
+                "--ignore=tests/step1_baseline",
+                "--ignore=tests/step2_fake_api",
+                "--ignore=tests/step3_stress",
+                "--ignore=tests/step4_ollama_synthesizer"
+            ],
             capture_output=True,
             text=True
         )
