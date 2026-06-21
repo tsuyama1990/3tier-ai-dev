@@ -8,10 +8,8 @@ Purpose: Verify the self-healing loop correctly:
 """
 
 import os
-import subprocess
 import sys
 from pathlib import Path
-import pytest
 
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -69,7 +67,7 @@ def test_self_healing_triggers_on_banned_import():
             model="ollama/qwen2.5-coder:7b",
             skip_self_healing=False, # ← 修復ループON
         )
-        
+
         # Step 3-A: タイムアウトしていないこと
         assert result.get("status") != "timeout", \
             "Self-healing loop must not timeout — Ollama hung"
@@ -86,7 +84,7 @@ def test_self_healing_triggers_on_banned_import():
 
     finally:
         # api_schema.yaml を元に戻す
-        if schema_existed:
+        if schema_existed and original_content is not None:
             schema_path.write_text(original_content)
         else:
             schema_path.unlink(missing_ok=True)

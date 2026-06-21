@@ -27,18 +27,18 @@ Usage:
     python3 dsc/asset_synthesizer.py --manifest /tmp/ase_manifest.json --llm
 """
 
-import sys
-import os
-import json
 import argparse
+import json
+import os
 import subprocess
-import urllib.request
+import sys
 import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Optional
-from pydantic import BaseModel, Field
-from dsc.utils import load_manifest
 
+from pydantic import BaseModel, Field
+
+from dsc.utils import load_manifest
 
 # ── Data models ────────────────────────────────────────────────────────────────
 
@@ -128,8 +128,7 @@ def build_api_index(report: dict) -> dict[str, ApiEntry]:
             if rel_path and rel_path not in entry.used_in:
                 entry.used_in.append(rel_path)
             trust = f.get("final_score", f.get("runtime_score", 0.0))
-            if trust > entry.max_trust_score:
-                entry.max_trust_score = trust
+            entry.max_trust_score = max(entry.max_trust_score, trust)
 
     return api_index
 
@@ -208,7 +207,7 @@ def generate_integration_graph(
     all_modules = list(modules.keys())
     top_modules = [m for m in all_modules if m != core_key]
     summary_modules = (
-        [core_key] + top_modules[:3] if core_key in modules else top_modules[:3]
+        [core_key, *top_modules[:3]] if core_key in modules else top_modules[:3]
     )
 
     lines.extend(
@@ -232,8 +231,7 @@ def _snippet_from_file(file_path: Path, max_lines: int = 20) -> str:
     try:
         source = file_path.read_text(encoding="utf-8", errors="replace")
         snippet_lines = source.splitlines()
-        snippet = "\n".join(snippet_lines[:max_lines])
-        return snippet
+        return "\n".join(snippet_lines[:max_lines])
     except Exception:
         return "# (could not read file)"
 
@@ -243,13 +241,11 @@ def _escape_mermaid_label(label: str) -> str:
     We replace double quotes with single quotes and brackets/braces with parentheses.
     """
     s = label.replace('"', "'")
-    s = s.replace("[", "(").replace("]", ")")
-    s = s.replace("{", "(").replace("}", ")")
-    return s
+    return s.replace("[", "(").replace("]", ")").replace("{", "(").replace("}", ")")
 
 
 def generate_workflow_graph(
-    api_index: dict[str, ApiEntry],
+    _api_index: dict[str, ApiEntry],
     report: dict,
     cache_dir: Path,
     target_pkg: str = "",
@@ -300,7 +296,7 @@ def generate_workflow_graph(
     max_edges = 15
 
     for _score, _rel_path, api_surface in top_files:
-        prev_id: Optional[str] = None
+        prev_id: str | None = None
         for fqn in api_surface:
             if fqn not in node_ids:
                 node_counter += 1
@@ -665,7 +661,7 @@ def synthesize(
     5. Return result report
     """
 
-    def log(msg: str):
+    def log(msg: str) -> None:
         print(f"[Synthesizer] {msg}", file=sys.stderr)
 
     mode = "LLM" if use_llm else "template"
@@ -835,7 +831,7 @@ Examples:
     return p
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     """CLI entry point."""
     args = build_parser().parse_args(argv)
 

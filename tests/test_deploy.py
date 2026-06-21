@@ -16,11 +16,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from dsc.deploy import (
     _parse_package_spec,
+    deploy,
     generate_api_schema,
     merge_workflow_graphs,
-    deploy,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

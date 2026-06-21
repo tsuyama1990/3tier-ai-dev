@@ -1,12 +1,11 @@
-import os
-import json
 import subprocess
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 # これから作らせるターゲット関数
 from orchestrator_api import run_3tier_dev
+
 
 class TestOrchestratorAPI(unittest.TestCase):
     def setUp(self):
@@ -76,12 +75,12 @@ class TestOrchestratorAPI(unittest.TestCase):
     def test_no_interactive_stdin(self, mock_stdin_read):
         """標準入力に一切依存しないこと（対話モードの排除）"""
         mock_stdin_read.side_effect = RuntimeError("sys.stdin.read() MUST NOT BE CALLED in API mode")
-        
+
         with patch("subprocess.run") as mock_run:
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_run.return_value = mock_result
-            
+
             with patch("pathlib.Path.exists", return_value=True):
                 run_3tier_dev("prompt", "ase", ["dummy.py"])
 
@@ -89,9 +88,9 @@ class TestOrchestratorAPI(unittest.TestCase):
     def test_fails_fast_if_knowledge_missing(self, mock_exists):
         """知識(Knowledge)が存在しない場合、Aiderを起動せずに即時エラーを返すこと"""
         mock_exists.return_value = False
-        
+
         result = run_3tier_dev("prompt", "unknown_pkg", ["dummy.py"])
-        
+
         self.assertFalse(result.get("success"))
         self.assertEqual(result.get("status"), "knowledge_missing")
 
@@ -100,16 +99,16 @@ class TestOrchestratorAPI(unittest.TestCase):
     def test_git_rollback_on_failure(self, mock_run, mock_exists):
         """修復ループが上限に達して失敗した場合、git reset --hard が呼ばれること"""
         mock_exists.return_value = True
-        
+
         # Aiderが常に失敗する(returncode=1)ようにモック
         mock_result_fail = MagicMock()
         mock_result_fail.returncode = 1
         mock_run.return_value = mock_result_fail
 
         result = run_3tier_dev("prompt", "ase", ["dummy.py"])
-        
+
         self.assertFalse(result.get("success"))
-        
+
         # subprocess.run の呼び出し履歴を取得
         calls = mock_run.call_args_list
         # git reset --hard HEAD と git clean -fd が呼ばれているか確認

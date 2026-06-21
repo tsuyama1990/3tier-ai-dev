@@ -37,7 +37,7 @@ class TestExtractSnippetMonolithicNodeFix(unittest.TestCase):
             if line.strip() and not line.lstrip().startswith(("import", "from"))
         ]
         self.assertTrue(
-            non_import, f"Should have non-import content, got: {repr(snippet[:100])}"
+            non_import, f"Should have non-import content, got: {snippet[:100]!r}"
         )
 
     def test_normal_file(self):
@@ -84,7 +84,7 @@ class TestExtractSnippetMonolithicNodeFix(unittest.TestCase):
             if line.strip() and not line.lstrip().startswith(("import", "from"))
         ]
         self.assertTrue(
-            non_import, f"Should have non-import content, got: {repr(snippet[:100])}"
+            non_import, f"Should have non-import content, got: {snippet[:100]!r}"
         )
 
     def test_mixed_imports_and_code(self):

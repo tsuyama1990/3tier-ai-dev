@@ -34,16 +34,16 @@ Usage:
         --target ase --venv /path/to/project/.venv
 """
 
-import sys
-import os
+import argparse
 import ast
 import json
-import argparse
+import os
 import subprocess
+import sys
 import tempfile
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
+
 from dsc.utils import load_manifest
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ _SUBPROCESS_ATTRS = frozenset(
 _W_TARGET_IMPORT = 2.0
 _W_INSTANTIATION = 1.5
 _W_HAS_MAIN = 1.0
-_W_SWEET_LINES = 1.0  # 20–150 lines
+_W_SWEET_LINES = 1.0  # 20-150 lines
 _W_EXAMPLE_DIR = 0.5
 _W_HARD_DEP = -3.0
 _W_INTERNAL_DEP = -2.0
@@ -133,7 +133,7 @@ class StaticScore:
     pytest_infra_signals: int = 0
     mock_usage: int = 0
     raw_score: float = 0.0
-    parse_error: Optional[str] = None
+    parse_error: str | None = None
     # Q3: fully-qualified API names called in this file → consumed by Asset Synthesizer
     # e.g. ["ase.io.read", "ase.Atoms", "ase.calculators.emt.EMT"]
     api_surface: list = field(default_factory=list)
@@ -150,7 +150,7 @@ class RunResult:
 
     result_type: str  # CLEAN | EXTERNAL_IMPORT_ERROR | TARGET_IMPORT_ERROR | TIMEOUT | RUNTIME_ERROR
     runtime_score: float
-    exit_code: Optional[int] = None
+    exit_code: int | None = None
     stderr_snippet: str = ""  # first 300 chars of stderr
     snippet_lines: int = 0
 
@@ -167,7 +167,7 @@ class TraceRecord:
     final_score: float
     snippet_lines: int
     written: bool
-    error: Optional[str] = None
+    error: str | None = None
     # Fully-qualified APIs observed in this file (for Asset Synthesizer)
     api_surface: list = field(default_factory=list)
 
@@ -175,17 +175,15 @@ class TraceRecord:
 # ── Stage 1: Static Analyzer ──────────────────────────────────────────────────
 
 
-def _is_internal(module: str, target_pkg: str) -> bool:
+def _is_internal(module: str, _target_pkg: str) -> bool:
     """Return True if module path indicates internal/private target code."""
     parts = module.split(".")
     if any(p.startswith("_") for p in parts[1:]):
         return True
-    if len(parts) > 1 and parts[1] == "test":
-        return True
-    return False
+    return len(parts) > 1 and parts[1] == "test"
 
 
-def _dotted_name(node) -> Optional[str]:
+def _dotted_name(node: ast.AST) -> str | None:
     """
     Reconstruct a dotted name from nested ast.Attribute / ast.Name nodes.
 
@@ -395,8 +393,8 @@ def extract_snippet(
 
     # Collect import lines (1-indexed) for the target package
     import_line_nums: set[int] = set()
-    main_start: Optional[int] = None
-    main_end: Optional[int] = None
+    main_start: int | None = None
+    main_end: int | None = None
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -578,7 +576,7 @@ def smoke_trace(
     Returns a structured report dict.
     """
 
-    def log(msg: str):
+    def log(msg: str) -> None:
         print(f"[Tracer] {msg}", file=sys.stderr)
 
     report = {
@@ -655,7 +653,7 @@ def smoke_trace(
         snippet = extract_snippet(source, target_pkg)
         run = run_snippet(snippet, target_pkg, python_bin, timeout=timeout)
 
-        # Final score = normalized static × runtime
+        # Final score = normalized static * runtime
         static_norm = min(sc.raw_score / _MAX_STATIC_SCORE, 1.0)
         final_score = round(static_norm * run.runtime_score, 3)
         passed = final_score >= _FINAL_THRESHOLD
@@ -733,7 +731,7 @@ def smoke_trace(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def find_venv_python(venv: Path) -> Optional[Path]:
+def find_venv_python(venv: Path) -> Path | None:
     """Locate the python binary inside a .venv directory."""
     for candidate in ("bin/python3", "bin/python", "Scripts/python.exe"):
         p = venv / candidate
@@ -810,7 +808,7 @@ Examples:
     return p
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     if args.manifest:

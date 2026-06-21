@@ -1,7 +1,7 @@
 {
     "mcpServers": {
         "aider-orchestrator": {
-            "command": "/home/tomo/project/000_devenv/3tier_ai_devs/run-mcp.sh",
+            "command": "/home/tomo/project/000_devenv/ekp-forge/run-mcp.sh",
             "args": [],
             "env": {
                 "OLLAMA_HOST": "http://127.0.0.1:11434"

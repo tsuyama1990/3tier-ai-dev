@@ -8,6 +8,7 @@ and returns structured JSON via run_3tier_dev().
 import os
 import sys
 from pathlib import Path
+
 import pytest
 import requests
 
@@ -77,7 +78,7 @@ def test_fibonacci_implementation_exists():
             "Fibonacci file not generated - run test_ollama_baseline_communication first"
         )
 
-    with open(target_file, "r", encoding="utf-8") as f:
+    with open(target_file, encoding="utf-8") as f:
         content = f.read()
 
     # Verify it's valid Python by compiling

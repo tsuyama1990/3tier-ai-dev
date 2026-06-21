@@ -4,9 +4,8 @@ Step 4: Asset Synthesizer Ollama Native Test
 Purpose: Verify _call_ollama() is implemented and synthesize() works
 with llm_provider="ollama", generating semantically rich integration_graph.md.
 """
-import json
-import sys
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -17,12 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from dsc.asset_synthesizer import (
     _call_ollama,
-    synthesize_semantic_graph,
     synthesize,
-    build_api_index,
-    load_report,
 )
-
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 OLLAMA_URL = "http://localhost:11434"
@@ -70,7 +65,7 @@ def test_synthesize_with_ollama_provider():
     cache_dir = Path(tempfile.mkdtemp(prefix="step4_test_"))
     try:
         shutil.copytree(FIXTURES_DIR, cache_dir, dirs_exist_ok=True)
-        
+
         result = synthesize(
             cache_dir=cache_dir,
             target_pkg="ase",
@@ -81,25 +76,25 @@ def test_synthesize_with_ollama_provider():
             llm_provider="ollama",
             ollama_base_url=OLLAMA_URL,
         )
-        
+
         # ファイル生成確認
         assert result["integration_graph_written"], \
             "integration_graph.md must be written"
-        
+
         ig_path = cache_dir / "integration_graph.md"
         assert ig_path.exists(), "integration_graph.md file must exist"
-        
+
         content = ig_path.read_text()
         assert len(content) > 100, \
             f"integration_graph.md must have substantial content, got {len(content)} bytes"
-        
+
         # Markdown の基本構造確認
         assert any(kw in content for kw in ["ase", "Integration Graph", "API", "#"]), \
             "integration_graph.md must contain meaningful content"
-        
+
         print(f"\n[Step 4-C] Generated {len(content)} bytes")
         print(f"[Step 4-C] First 300 chars:\n{content[:300]}")
-        
+
     finally:
         shutil.rmtree(cache_dir, ignore_errors=True)
 
@@ -112,7 +107,7 @@ def test_ollama_fallback_on_error():
     cache_dir = Path(tempfile.mkdtemp(prefix="step4_fallback_"))
     try:
         shutil.copytree(FIXTURES_DIR, cache_dir, dirs_exist_ok=True)
-        
+
         # 存在しないポートを指定して接続失敗をシミュレート
         result = synthesize(
             cache_dir=cache_dir,
@@ -124,17 +119,17 @@ def test_ollama_fallback_on_error():
             llm_provider="ollama",
             ollama_base_url="http://localhost:19999",  # 存在しないポート
         )
-        
+
         # フォールバックで template モードで生成されること
         assert result["integration_graph_written"], \
             "Should fall back to template mode and write the file"
-        
+
         ig_content = (cache_dir / "integration_graph.md").read_text()
         assert "Integration Graph" in ig_content, \
             "Fallback template should contain 'Integration Graph'"
-        
+
         print("\n[Step 4-D] Fallback to template mode: PASS")
-        
+
     finally:
         shutil.rmtree(cache_dir, ignore_errors=True)
 
@@ -145,7 +140,7 @@ def test_cli_ollama_provider():
     build_parser() が --llm-provider と --ollama-url を受け付けること。
     """
     from dsc.asset_synthesizer import build_parser
-    
+
     args = build_parser().parse_args([
         "--cache-dir", "/tmp/test",
         "--target", "ase",
@@ -154,7 +149,7 @@ def test_cli_ollama_provider():
         "--llm-provider", "ollama",
         "--ollama-url", "http://localhost:11434",
     ])
-    
+
     assert args.llm_provider == "ollama"
     assert args.ollama_url == "http://localhost:11434"
     assert args.llm is True

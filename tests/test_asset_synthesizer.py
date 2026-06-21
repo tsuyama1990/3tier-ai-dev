@@ -23,16 +23,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dsc.asset_synthesizer import (
     ApiEntry,
-    load_report,
-    build_api_index,
     _module_display,
+    build_api_index,
+    build_parser,
     generate_integration_graph,
     generate_workflow_graph,
-    synthesize,
-    build_parser,
+    load_report,
     main,
+    synthesize,
 )
-
 
 # ── Sample mock data ──────────────────────────────────────────────────────────
 
@@ -219,8 +218,10 @@ class TestBuildApiIndex(unittest.TestCase):
     def test_build_index_empty_api_surface_fallback(self):
         """Files with empty api_surface should fall back to report api_surface."""
         report = copy.deepcopy(SAMPLE_REPORT)
-        # Clear file-level api_surface
-        for f in report["files"]:
+        files = report["files"]
+        assert isinstance(files, list)
+        for f in files:
+            assert isinstance(f, dict)
             f["api_surface"] = []
         report["api_surface"] = ["ase.Atoms", "ase.io.read"]
 
@@ -817,7 +818,7 @@ class TestEdgeCases(unittest.TestCase):
 
     def test_synthesize_with_llm(self):
         """synthesize with use_llm=True should fetch semantic markdown using OpenRouter API."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         # Prepare mock response
         mock_response = MagicMock()
@@ -829,7 +830,7 @@ class TestEdgeCases(unittest.TestCase):
                 }
             }]
         }).encode("utf-8")
-        
+
         tmpdir = _make_cache_dir([
             ("verified_examples/examples/00-n2cu.py", SAMPLE_CODE_00),
         ])
@@ -847,13 +848,13 @@ class TestEdgeCases(unittest.TestCase):
                     use_llm=True,
                     llm_model="deepseek/deepseek-v4-flash",
                 )
-                
+
                 # Check that urlopen was indeed called
                 mock_urlopen.assert_called_once()
-                
+
                 self.assertTrue(result["integration_graph_written"])
                 self.assertTrue(result["workflow_graph_written"])
-                
+
                 # Verify that integration_graph.md contains the LLM output
                 ig_content = (tmpdir / "integration_graph.md").read_text()
                 self.assertIn("# ASE 3.28.0 — Integration Graph", ig_content)

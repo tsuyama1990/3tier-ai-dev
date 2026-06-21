@@ -21,23 +21,19 @@ Usage:
     python3 dsc/package_inspector.py --project /path/to/project --target ase --output manifest.json
 """
 
-import sys
-import json
 import argparse
+import json
 import re
+import sys
 from email import message_from_string
 from pathlib import Path
-from typing import Optional
-
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-
 from dsc.config import KNOWLEDGE_CACHE
-
 
 # ── Site-packages discovery ────────────────────────────────────────────────────
 
-def find_site_packages(venv: Path) -> Optional[Path]:
+def find_site_packages(venv: Path) -> Path | None:
     """
     Locate site-packages under .venv, agnostic of Python minor version.
 
@@ -57,7 +53,7 @@ def find_site_packages(venv: Path) -> Optional[Path]:
 
 # ── .dist-info discovery ───────────────────────────────────────────────────────
 
-def find_dist_info(site_packages: Path, package_name: str) -> Optional[Path]:
+def find_dist_info(site_packages: Path, package_name: str) -> Path | None:
     """
     Find the .dist-info directory for `package_name`.
 
@@ -112,10 +108,15 @@ def parse_metadata(dist_info: Path) -> dict:
                     break
 
         # Fall back to Home-page
-        if not result["github_url"] and result["home_page"]:
-            if any(h in result["home_page"]
-                   for h in ("github.com", "gitlab.com", "bitbucket.org")):
-                result["github_url"] = result["home_page"]
+        if (
+            not result["github_url"]
+            and result["home_page"]
+            and any(
+                h in result["home_page"]
+                for h in ("github.com", "gitlab.com", "bitbucket.org")
+            )
+        ):
+            result["github_url"] = result["home_page"]
 
     except Exception as exc:
         result["parse_error"] = str(exc)
@@ -289,7 +290,7 @@ Examples:
     return p
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     project = Path(args.project).expanduser().resolve()
@@ -307,20 +308,21 @@ def main(argv=None):
         print(f"ERROR: cannot locate site-packages under {venv}", file=sys.stderr)
         sys.exit(1)
 
+    packages_list = []
+    if args.all:
+        packages_list = inspect_all_packages(site_packages)
+    elif args.target:
+        for pkg in args.target:
+            packages_list.append(inspect_package(site_packages, pkg))
+
     manifest = {
         "project":         str(project),
         "venv":            str(venv),
         "site_packages":   str(site_packages),
         "python_version":  site_packages.parent.name,   # e.g. "python3.13"
         "knowledge_cache": str(KNOWLEDGE_CACHE),
-        "packages":        [],
+        "packages":        packages_list,
     }
-
-    if args.all:
-        manifest["packages"] = inspect_all_packages(site_packages)
-    else:
-        for pkg in args.target:
-            manifest["packages"].append(inspect_package(site_packages, pkg))
 
     indent  = None if args.compact else 2
     payload = json.dumps(manifest, indent=indent, ensure_ascii=False)

@@ -9,6 +9,7 @@ exactly as documented, without hallucinating standard constructor patterns.
 import os
 import sys
 from pathlib import Path
+
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -26,7 +27,7 @@ def test_fake_api_reference():
     """
     # Read the prompt from file
     prompt_file = os.path.join(os.path.dirname(__file__), "prompt_fake_calculator.txt")
-    with open(prompt_file, "r", encoding="utf-8") as f:
+    with open(prompt_file, encoding="utf-8") as f:
         prompt = f.read()
 
     # Target file for generated code
@@ -64,7 +65,7 @@ def test_fake_api_reference():
     # Verify file was generated
     assert os.path.exists(target_file), f"Generated file {target_file} should exist"
 
-    with open(target_file, "r", encoding="utf-8") as f:
+    with open(target_file, encoding="utf-8") as f:
         content = f.read()
 
     print(f"\n[Step 2 Generated code]:\n{content}")
@@ -92,7 +93,7 @@ def test_fake_api_reference():
                 func_name = func.attr
             if func_name == "FakeCalculator":
                 assert len(node.args) == 0, (
-                    f"FakeCalculator must use keyword arguments only, got positional args"
+                    "FakeCalculator must use keyword arguments only, got positional args"
                 )
 
 
@@ -105,7 +106,7 @@ def test_my_app_class_exists():
     if not os.path.exists(target_file):
         pytest.skip("my_app.py not generated - run test_fake_api_reference first")
 
-    with open(target_file, "r", encoding="utf-8") as f:
+    with open(target_file, encoding="utf-8") as f:
         content = f.read()
 
     assert "class MyApp" in content, "Generated file must define MyApp class"

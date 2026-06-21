@@ -37,14 +37,14 @@ Usage:
         --packages mesa=3.5.1 --force
 """
 
-import sys
-import re
-import json
-import shutil
 import argparse
-from datetime import datetime, timezone
+import json
+import re
+import shutil
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
+
 from dsc.config import KNOWLEDGE_CACHE
 from dsc.utils import load_manifest
 
@@ -95,7 +95,7 @@ def _log(msg: str) -> None:
     print(f"[Deploy] {msg}", file=sys.stderr)
 
 
-def _copy_file(src: Path, dst: Path, dry_run: bool, force: bool) -> Optional[str]:
+def _copy_file(src: Path, dst: Path, dry_run: bool, force: bool) -> str | None:
     """
     Copy src → dst.
 
@@ -156,7 +156,7 @@ def _load_existing_schema(schema_path: Path) -> list[str]:
     if not schema_path.exists():
         return []
     try:
-        import yaml  # type: ignore[import-untyped]
+        import yaml
 
         data = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
         if isinstance(data, dict):
@@ -181,7 +181,7 @@ def _load_existing_schema(schema_path: Path) -> list[str]:
 
 def generate_api_schema(
     packages: list[tuple[str, str]],
-    existing_path: Optional[Path] = None,
+    existing_path: Path | None = None,
     force: bool = False,
 ) -> str:
     """
@@ -209,7 +209,7 @@ def generate_api_schema(
     else:
         pkg_section = list(pkg_names)
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     pkg_comment = ", ".join(f"{n}={pkg_versions.get(n, '?')}" for n in pkg_names)
 
     lines = [
@@ -248,7 +248,7 @@ def _extract_sections(content: str) -> dict[str, str]:
     Returns {heading_text: section_content}.
     """
     sections: dict[str, str] = {}
-    current_key: Optional[str] = None
+    current_key: str | None = None
     current_lines: list[str] = []
 
     for line in content.splitlines(keepends=True):
@@ -257,9 +257,8 @@ def _extract_sections(content: str) -> dict[str, str]:
                 sections[current_key] = "".join(current_lines)
             current_key = line[3:].rstrip()
             current_lines = [line]
-        else:
-            if current_key is not None:
-                current_lines.append(line)
+        elif current_key is not None:
+            current_lines.append(line)
             # lines before the first ## heading are part of the preamble
     if current_key is not None:
         sections[current_key] = "".join(current_lines)
@@ -285,7 +284,7 @@ def merge_workflow_graphs(
         pkg, ver, text = contents[0]
         return text
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     pkg_labels = " + ".join(f"{p} {v}" for p, v, _ in contents)
 
     lines = [
@@ -488,7 +487,7 @@ def _parse_package_spec(spec: str) -> tuple[str, str]:
     )
 
 
-def _auto_detect_version(pkg_name: str) -> Optional[str]:
+def _auto_detect_version(pkg_name: str) -> str | None:
     """
     If only a package name is given (no version), scan the cache for
     the most recently modified version directory.
@@ -572,7 +571,7 @@ Examples:
     return p
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     project = Path(args.project).expanduser().resolve()

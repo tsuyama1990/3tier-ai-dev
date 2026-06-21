@@ -14,5 +14,5 @@ fi
 CURRENT_REPO_PATH=$(pwd)
 
 exec /home/tomo/.local/bin/aider-mcp \
-  --aider-path "/home/tomo/project/000_devenv/3tier_ai_devs/orchestrator.py" \
+  --aider-path "/home/tomo/project/000_devenv/ekp-forge/orchestrator.py" \
   --repo-path "$CURRENT_REPO_PATH"

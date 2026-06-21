@@ -1,9 +1,10 @@
-import unittest
-from unittest.mock import patch, MagicMock
 import subprocess
+import unittest
+from unittest.mock import MagicMock, patch
 
 # Import the tools to be tested
 from mcp_server import execute_simple_aider, execute_strict_compile
+
 
 class TestMCPServer(unittest.TestCase):
     @patch("subprocess.run")

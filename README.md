@@ -13,7 +13,7 @@ This platform addresses the problem of **hallucination in RAG (Retrieval-Augment
 3. **Type Stubs** - Static type information (Trust Score: 0.7)
 4. **README** - Conceptual documentation (Trust Score: 0.4)
 
-Detailed configuration manuals (MCP, Aider setups, and parameters tuning) can be found in **[docs/detailed_guide.md](file:///home/tomo/project/000_devenv/3tier_ai_devs/docs/detailed_guide.md)**.
+Detailed configuration manuals (MCP, Aider setups, and parameters tuning) can be found in **[docs/detailed_guide.md](file:///home/tomo/project/000_devenv/ekp-forge/docs/detailed_guide.md)**.
 
 ---
 
@@ -94,7 +94,7 @@ python3 dsc/deploy.py --project /path/to/project --packages mesa
 The system uses an AST-based **Minimal Viable Gatekeeper (MVG)** to validate imports before running code changes, preventing hallucinated libraries.
 
 For setup guides for MCP servers, Aider prompt configurations, and parameter tuning, please refer to the detailed manual:
-👉 **[EKP/DSC Detailed Manual (detailed_guide.md)](file:///home/tomo/project/000_devenv/3tier_ai_devs/docs/detailed_guide.md)**
+👉 **[EKP/DSC Detailed Manual (detailed_guide.md)](file:///home/tomo/project/000_devenv/ekp-forge/docs/detailed_guide.md)**
 
 ---
 
@@ -106,8 +106,8 @@ All test suites reside in the `tests/` directory:
 pytest -v
 ```
 
-- **[tests/test_e2e.py](file:///home/tomo/project/000_devenv/3tier_ai_devs/tests/test_e2e.py)**: Full end-to-end pipeline verification.
-- **[tests/test_deploy.py](file:///home/tomo/project/000_devenv/3tier_ai_devs/tests/test_deploy.py)**: Asset copy and `api_schema.yaml` merge verification.
-- **[tests/test_asset_synthesizer.py](file:///home/tomo/project/000_devenv/3tier_ai_devs/tests/test_asset_synthesizer.py)**: Offline and LLM-based graph synthesis.
-- **[tests/test_smoke_tracer.py](file:///home/tomo/project/000_devenv/3tier_ai_devs/tests/test_smoke_tracer.py)**: Code snippet AST extraction tests.
-- **[tests/test_orchestrator.py](file:///home/tomo/project/000_devenv/3tier_ai_devs/tests/test_orchestrator.py)**: self-healing loop and cleanup test.
+- **[tests/test_e2e.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_e2e.py)**: Full end-to-end pipeline verification.
+- **[tests/test_deploy.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_deploy.py)**: Asset copy and `api_schema.yaml` merge verification.
+- **[tests/test_asset_synthesizer.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_asset_synthesizer.py)**: Offline and LLM-based graph synthesis.
+- **[tests/test_smoke_tracer.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_smoke_tracer.py)**: Code snippet AST extraction tests.
+- **[tests/test_orchestrator.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_orchestrator.py)**: self-healing loop and cleanup test.
