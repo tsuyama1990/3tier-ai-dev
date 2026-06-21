@@ -1,9 +1,9 @@
-import sys
-import os
 import json
+import os
 import subprocess
+import sys
 
-from dsc import package_inspector, source_miner, smoke_tracer, asset_synthesizer, deploy
+from dsc import asset_synthesizer, deploy, package_inspector, smoke_tracer, source_miner
 
 
 def run_main_safely(main_func, argv):

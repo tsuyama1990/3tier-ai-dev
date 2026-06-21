@@ -27,18 +27,18 @@ Usage:
     python3 dsc/asset_synthesizer.py --manifest /tmp/ase_manifest.json --llm
 """
 
-import sys
-import os
-import json
 import argparse
+import json
+import os
 import subprocess
-import urllib.request
+import sys
 import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Optional
-from pydantic import BaseModel, Field
-from dsc.utils import load_manifest
 
+from pydantic import BaseModel, Field
+
+from dsc.utils import load_manifest
 
 # ── Data models ────────────────────────────────────────────────────────────────
 
@@ -128,8 +128,7 @@ def build_api_index(report: dict) -> dict[str, ApiEntry]:
             if rel_path and rel_path not in entry.used_in:
                 entry.used_in.append(rel_path)
             trust = f.get("final_score", f.get("runtime_score", 0.0))
-            if trust > entry.max_trust_score:
-                entry.max_trust_score = trust
+            entry.max_trust_score = max(entry.max_trust_score, trust)
 
     return api_index
 
@@ -208,7 +207,7 @@ def generate_integration_graph(
     all_modules = list(modules.keys())
     top_modules = [m for m in all_modules if m != core_key]
     summary_modules = (
-        [core_key] + top_modules[:3] if core_key in modules else top_modules[:3]
+        [core_key, *top_modules[:3]] if core_key in modules else top_modules[:3]
     )
 
     lines.extend(
@@ -232,8 +231,7 @@ def _snippet_from_file(file_path: Path, max_lines: int = 20) -> str:
     try:
         source = file_path.read_text(encoding="utf-8", errors="replace")
         snippet_lines = source.splitlines()
-        snippet = "\n".join(snippet_lines[:max_lines])
-        return snippet
+        return "\n".join(snippet_lines[:max_lines])
     except Exception:
         return "# (could not read file)"
 
@@ -243,13 +241,11 @@ def _escape_mermaid_label(label: str) -> str:
     We replace double quotes with single quotes and brackets/braces with parentheses.
     """
     s = label.replace('"', "'")
-    s = s.replace("[", "(").replace("]", ")")
-    s = s.replace("{", "(").replace("}", ")")
-    return s
+    return s.replace("[", "(").replace("]", ")").replace("{", "(").replace("}", ")")
 
 
 def generate_workflow_graph(
-    api_index: dict[str, ApiEntry],
+    _api_index: dict[str, ApiEntry],
     report: dict,
     cache_dir: Path,
     target_pkg: str = "",
@@ -300,7 +296,7 @@ def generate_workflow_graph(
     max_edges = 15
 
     for _score, _rel_path, api_surface in top_files:
-        prev_id: Optional[str] = None
+        prev_id: str | None = None
         for fqn in api_surface:
             if fqn not in node_ids:
                 node_counter += 1
@@ -480,6 +476,66 @@ def _call_openrouter(
     return data["choices"][0]["message"]["content"]
 
 
+def _call_ollama(
+    prompt: str,
+    model: str = "qwen2.5-coder:7b",
+    max_tokens: int = 4096,
+    temperature: float = 0.1,
+    timeout: int = 600,
+    ollama_base_url: str = "http://localhost:11434",
+) -> str:
+    """
+    Call the Ollama chat completion API using urllib.request (stdlib only).
+
+    Compatible with Ollama's /api/chat endpoint (OpenAI-compatible format).
+
+    Args:
+        prompt:          User-turn message.
+        model:           Ollama model name (e.g. "qwen2.5-coder:7b").
+        max_tokens:      Maximum output tokens (maps to num_predict in Ollama).
+        temperature:     Sampling temperature.
+        timeout:         HTTP timeout in seconds.
+        ollama_base_url: Ollama server base URL.
+
+    Returns:
+        The assistant's reply string.
+
+    Raises:
+        RuntimeError: If the Ollama server is unreachable or returns an error.
+    """
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _SYNTHESIS_SYSTEM_PROMPT},
+            {"role": "user",   "content": prompt},
+        ],
+        "stream": False,
+        "options": {
+            "num_predict": max_tokens,
+            "temperature": temperature,
+        },
+    }).encode("utf-8")
+
+    url = f"{ollama_base_url.rstrip('/')}/api/chat"
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            f"Ollama server unreachable at {url}: {exc}. "
+            "Ensure 'ollama serve' is running."
+        ) from exc
+
+    # Ollama /api/chat response: {"message": {"role": "assistant", "content": "..."}}
+    return data["message"]["content"]
+
+
 def collect_snippets(cache_dir: Path, max_tokens: int = 24000) -> str:
     """
     Collect verified Python code snippets from cache_dir.
@@ -528,12 +584,14 @@ def synthesize_semantic_graph(
     api_index: "dict[str, ApiEntry]",
     report: dict,
     model: str = "deepseek/deepseek-v4-flash",
+    llm_provider: str = "openrouter",
+    ollama_base_url: str = "http://localhost:11434",
 ) -> str:
     """
     Use an LLM to compile a semantic integration_graph.md.
 
     Collects verified snippets from the cache, formats the synthesis prompt,
-    calls OpenRouter, and returns the generated Markdown.
+    calls OpenRouter or Ollama, and returns the generated Markdown.
     """
 
     def log(msg: str) -> None:
@@ -557,14 +615,26 @@ def synthesize_semantic_graph(
         api_surface=api_surface_str,
     )
 
-    log(f"Calling OpenRouter ({model}) with {len(snippets)} chars of snippets …")
-    try:
-        result = _call_openrouter(prompt, model=model)
-        log("LLM synthesis complete.")
-        return result
-    except Exception as exc:
-        log(f"LLM call failed ({exc}). Falling back to template mode.")
-        return generate_integration_graph(api_index, report, cache_dir, target_pkg)
+    if llm_provider == "ollama":
+        log(f"Calling Ollama ({model} @ {ollama_base_url}) with {len(snippets)} chars of snippets …")
+        try:
+            result = _call_ollama(
+                prompt, model=model, ollama_base_url=ollama_base_url
+            )
+            log("Ollama synthesis complete.")
+            return result
+        except Exception as exc:
+            log(f"Ollama call failed ({exc}). Falling back to template mode.")
+            return generate_integration_graph(api_index, report, cache_dir, target_pkg)
+    else:
+        log(f"Calling OpenRouter ({model}) with {len(snippets)} chars of snippets …")
+        try:
+            result = _call_openrouter(prompt, model=model)
+            log("LLM synthesis complete.")
+            return result
+        except Exception as exc:
+            log(f"LLM call failed ({exc}). Falling back to template mode.")
+            return generate_integration_graph(api_index, report, cache_dir, target_pkg)
 
 
 # ── Orchestrator ───────────────────────────────────────────────────────────────
@@ -577,6 +647,8 @@ def synthesize(
     dry_run: bool = False,
     use_llm: bool = False,
     llm_model: str = "deepseek/deepseek-v4-flash",
+    llm_provider: str = "openrouter",
+    ollama_base_url: str = "http://localhost:11434",
 ) -> dict:
     """
     Full Asset Synthesizer pipeline.
@@ -589,7 +661,7 @@ def synthesize(
     5. Return result report
     """
 
-    def log(msg: str):
+    def log(msg: str) -> None:
         print(f"[Synthesizer] {msg}", file=sys.stderr)
 
     mode = "LLM" if use_llm else "template"
@@ -624,6 +696,8 @@ def synthesize(
             api_index=api_index,
             report=report,
             model=llm_model,
+            llm_provider=llm_provider,
+            ollama_base_url=ollama_base_url,
         )
     else:
         ig_content = generate_integration_graph(api_index, report, cache_dir, target_pkg)
@@ -732,6 +806,24 @@ Examples:
         help="OpenRouter model to use for LLM synthesis (default: deepseek/deepseek-v4-flash)",
     )
     p.add_argument(
+        "--llm-provider",
+        metavar="PROVIDER",
+        default="openrouter",
+        choices=["openrouter", "ollama"],
+        help=(
+            "LLM provider for --llm mode. "
+            "'openrouter' (default): uses OPENROUTER_API_KEY. "
+            "'ollama': calls local Ollama server at --ollama-url."
+        ),
+    )
+    p.add_argument(
+        "--ollama-url",
+        metavar="URL",
+        default="http://localhost:11434",
+        help="Ollama server base URL (default: http://localhost:11434). "
+             "Used when --llm-provider ollama.",
+    )
+    p.add_argument(
         "--compact",
         action="store_true",
         help="Emit compact JSON report",
@@ -739,7 +831,7 @@ Examples:
     return p
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     """CLI entry point."""
     args = build_parser().parse_args(argv)
 
@@ -771,6 +863,8 @@ def main(argv=None):
         dry_run=args.dry_run,
         use_llm=args.llm,
         llm_model=args.llm_model,
+        llm_provider=args.llm_provider,
+        ollama_base_url=args.ollama_url,
     )
 
     indent = None if args.compact else 2

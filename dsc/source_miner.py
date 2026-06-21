@@ -31,17 +31,15 @@ Usage:
       --output ~/.knowledge-cache/ase/3.28.0
 """
 
-import sys
-import os
-import json
-import shutil
 import argparse
-import subprocess
-import tempfile
+import json
+import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
-from typing import Optional
-
 
 from dsc.config import KNOWLEDGE_CACHE
 from dsc.utils import load_manifest
@@ -84,7 +82,7 @@ _SPARSE_CHECKOUT_SUPPORTED = _GIT_VERSION >= (2, 25, 0)
 
 class _DirScore:
     """Scoring container for a candidate directory."""
-    __slots__ = ("path", "score", "category")
+    __slots__ = ("category", "path", "score")
 
     def __init__(self, path: Path, score: float, category: str):
         self.path     = path
@@ -92,7 +90,7 @@ class _DirScore:
         self.category = category   # 'test' | 'example'
 
 
-def _score_directory(d: Path) -> Optional[_DirScore]:
+def _score_directory(d: Path) -> _DirScore | None:
     """
     Assign a relevance score to a directory based on heuristics.
 
@@ -141,7 +139,7 @@ def _score_directory(d: Path) -> Optional[_DirScore]:
     return _DirScore(path=d, score=score, category=category)
 
 
-def discover_target_dirs(repo_root: Path, max_depth: int = 4, target_name: Optional[str] = None) -> list:
+def discover_target_dirs(repo_root: Path, max_depth: int = 4, target_name: str | None = None) -> list:
     """
     Walk the repo tree up to `max_depth` levels, scoring directories.
 
@@ -154,7 +152,7 @@ def discover_target_dirs(repo_root: Path, max_depth: int = 4, target_name: Optio
     """
     candidates: list[_DirScore] = []
 
-    def _walk(current: Path, depth: int):
+    def _walk(current: Path, depth: int) -> None:
         if depth > max_depth:
             return
         try:
@@ -205,7 +203,7 @@ def discover_target_dirs(repo_root: Path, max_depth: int = 4, target_name: Optio
 
 # ── Fetch strategies ──────────────────────────────────────────────────────────
 
-def _run(cmd: list, cwd: Optional[Path] = None, timeout: int = 300) -> subprocess.CompletedProcess:
+def _run(cmd: list, cwd: Path | None = None, timeout: int = 300) -> subprocess.CompletedProcess:
     """Run a command, capturing output. Raises on non-zero exit."""
     return subprocess.run(
         cmd,
@@ -279,11 +277,7 @@ def _fetch_sparse(url: str, tmpdir: Path) -> bool:
         parts = Path(d).parts
         # Evaluate the leaf directory name
         leaf = parts[-1].lower() if parts else ""
-        if leaf in _TEST_DIR_NAMES:
-            target_dirs.append(d)
-        elif leaf in _EXAMPLE_DIR_NAMES:
-            target_dirs.append(d)
-        elif "test" in leaf or "example" in leaf or "demo" in leaf or "sample" in leaf:
+        if leaf in _TEST_DIR_NAMES or leaf in _EXAMPLE_DIR_NAMES or "test" in leaf or "example" in leaf or "demo" in leaf or "sample" in leaf:
             target_dirs.append(d)
 
     if not target_dirs:
@@ -295,7 +289,7 @@ def _fetch_sparse(url: str, tmpdir: Path) -> bool:
     if res.returncode != 0:
         return False
 
-    res = _run(["git", "sparse-checkout", "set"] + target_dirs, cwd=tmpdir)
+    res = _run(["git", "sparse-checkout", "set", *target_dirs], cwd=tmpdir)
     if res.returncode != 0:
         return False
 
@@ -397,7 +391,7 @@ def extract_sources(repo_root: Path, target_dirs: list) -> list[dict]:
 
 # ── Output stage: copy to knowledge cache ────────────────────────────────────
 
-def materialize_to_cache(records: list[dict], repo_root: Path, cache_dir: Path) -> list[str]:
+def materialize_to_cache(records: list[dict], _repo_root: Path, cache_dir: Path) -> list[str]:
     """
     Copy extracted files into the cache, mirroring their relative paths.
 
@@ -420,7 +414,7 @@ def materialize_to_cache(records: list[dict], repo_root: Path, cache_dir: Path) 
 # ── Main orchestrator ─────────────────────────────────────────────────────────
 
 def mine(source_url: str, name: str, version: str,
-         output_dir: Optional[Path] = None,
+         output_dir: Path | None = None,
          dry_run: bool = False) -> dict:
     """
     Full source mining pipeline for one package.
@@ -564,7 +558,7 @@ Examples:
     return p
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.manifest:
         mf = load_manifest(args.manifest)
