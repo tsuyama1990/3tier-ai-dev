@@ -70,6 +70,14 @@ def run_3tier_dev(prompt, target_pkg, target_files, timeout=600):
 
         if res.returncode != 0:
             orchestrator.log(f"Initial Aider pass failed with code: {res.returncode}")
+            # P1: Git rollback on failure
+            orchestrator.log("Performing git rollback due to failure...")
+            try:
+                subprocess.run(["git", "reset", "--hard", "HEAD"], capture_output=True, check=False)
+                subprocess.run(["git", "clean", "-fd"], capture_output=True, check=False)
+                orchestrator.log("Git rollback completed.")
+            except Exception as e:
+                orchestrator.log(f"Git rollback failed: {str(e)}")
             return {
                 "success": False,
                 "status": "error",
