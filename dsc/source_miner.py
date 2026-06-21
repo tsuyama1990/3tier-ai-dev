@@ -43,9 +43,8 @@ from pathlib import Path
 from typing import Optional
 
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-
-KNOWLEDGE_CACHE = Path.home() / ".knowledge-cache"
+from dsc.config import KNOWLEDGE_CACHE
+from dsc.utils import load_manifest
 
 # Directories scored for "test" content
 _TEST_DIR_NAMES  = {"tests", "test", "testing", "pytests", "specs", "spec"}
@@ -112,13 +111,17 @@ def _score_directory(d: Path) -> Optional[_DirScore]:
     category = None
 
     if name in _TEST_DIR_NAMES:
-        score += 3.0; category = "test"
+        score += 3.0
+        category = "test"
     elif name in _EXAMPLE_DIR_NAMES:
-        score += 3.0; category = "example"
+        score += 3.0
+        category = "example"
     elif "test" in name:
-        score += 1.5; category = "test"
+        score += 1.5
+        category = "test"
     elif "example" in name or "demo" in name or "sample" in name:
-        score += 1.5; category = "example"
+        score += 1.5
+        category = "example"
 
     if category is None:
         return None
@@ -138,9 +141,13 @@ def _score_directory(d: Path) -> Optional[_DirScore]:
     return _DirScore(path=d, score=score, category=category)
 
 
-def discover_target_dirs(repo_root: Path, max_depth: int = 4) -> list:
+def discover_target_dirs(repo_root: Path, max_depth: int = 4, target_name: Optional[str] = None) -> list:
     """
     Walk the repo tree up to `max_depth` levels, scoring directories.
+
+    If target_name is provided, we prioritize directories whose path contains
+    the target_name (case-insensitive) to handle monorepos correctly. If no such
+    directories are found, we fall back to searching all directories.
 
     Returns a sorted list of (relative_path_str, category) tuples for
     directories with score > 0, ordered by score descending.
@@ -166,11 +173,24 @@ def discover_target_dirs(repo_root: Path, max_depth: int = 4) -> list:
                 _walk(entry, depth + 1)
 
     _walk(repo_root, 1)
+
+    # Monorepo filter: if target_name is specified, filter candidates
+    if target_name:
+        name_lower = target_name.lower()
+        filtered = []
+        for c in candidates:
+            # Check if target_name is in the path components
+            rel_parts = [p.lower() for p in c.path.relative_to(repo_root).parts]
+            if any(name_lower in p for p in rel_parts):
+                filtered.append(c)
+        if filtered:
+            candidates = filtered
+
     candidates.sort(key=lambda c: c.score, reverse=True)
 
     # Deduplicate: drop a path if an ancestor is already included
     result = []
-    included_paths = set()
+    included_paths: set[Path] = set()
     for c in candidates:
         rel = c.path.relative_to(repo_root)
         # Skip if any parent is already collected
@@ -444,7 +464,7 @@ def mine(source_url: str, name: str, version: str,
         print(f"[Miner] Fetch complete (strategy: {strategy})", file=sys.stderr)
 
         # Step 2: Discover directories
-        target_dirs = discover_target_dirs(tmpdir)
+        target_dirs = discover_target_dirs(tmpdir, target_name=name)
         report["discovered_dirs"] = [
             {"rel_path": rd, "category": cat} for rd, cat in target_dirs
         ]
@@ -529,7 +549,7 @@ Examples:
     p.add_argument(
         "--output",
         metavar="DIR",
-        help=f"Output cache directory (default: ~/.knowledge-cache/NAME/VERSION/)",
+        help="Output cache directory (default: ~/.knowledge-cache/NAME/VERSION/)",
     )
     p.add_argument(
         "--dry-run",
@@ -546,9 +566,8 @@ Examples:
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-
     if args.manifest:
-        mf = json.loads(Path(args.manifest).read_text())
+        mf = load_manifest(args.manifest)
         pkg = mf["packages"][0]
         url     = pkg.get("github_url") or pkg.get("source_url")
         name    = pkg["name"]

@@ -64,6 +64,10 @@ project/
 
 トレース結果とTrust Scoreに基づき、最終的なナレッジアセット（MarkdownグラフおよびPythonスクリプト）を生成し、`~/.knowledge-cache/` へ出力する。
 
+**LLM連携（`--llm` オプトイン）:**
+- **デフォルト（`--no-llm`）:** オフライン・高速モード。AST解析やトレース情報のみに基づき、APIサーフェステーブルを格納した基本的な `integration_graph.md` を生成する。
+- **LLMモード（`--llm`）:** オンライン・セマンティック生成。収集した動作保証コード（Trust Score 0.9以上）と実行トレース情報をOpenRouter経由でLLMに送信し、クラス・メソッドの意味論的依存関係や制約条件を記述した高度なドキュメントを生成する。デフォルトモデルは `deepseek/deepseek-v4-flash`（`--llm-model` で変更可能）。
+
 ---
 
 ## 4. Trust Score (信頼度) 評価モデル
@@ -96,31 +100,51 @@ AIエージェントがハルシネーションを起こさず、上記アセッ
 ### 6.1. `~/.aider.conf.yml`
 
 ```yaml
-model: openrouter/anthropic/claude-3.5-sonnet
-editor-model: ollama/qwen2.5-coder:7b
-model-metadata-file: ~/.aider.model.metadata.json
-model-settings-file: ~/.aider.model.settings.yml
+model: openrouter/google/gemma-4-31b-it:free
+editor-model: ollama/qwen2.5-coder:7b-instruct-q4_K_M
+model-settings-file: .aider.model.settings.yml
+map-tokens: 1024
+timeout: 120
 ```
 
-### 6.2. `~/.aider.model.settings.yml` (Qwen 7B 制御プロンプト)
+- **`model`**: 基幹となる推論/設計AIモデル。`openrouter/google/gemma-4-31b-it:free` や `openrouter/deepseek/deepseek-v4-flash` 等のLLMを指定。
+- **`editor-model`**: コード編集を実行するローカルLLM（`ollama/qwen2.5-coder:7b-instruct-q4_K_M` 等）。
+- **`model-settings-file`**: モデルごとのシステムプロンプト接頭辞や編集フォーマットを定義する設定ファイル名。
+- **`model-metadata-file`**: モデルのトークン制限やプロバイダ情報を定義したメタデータファイル（`~/.aider.model.metadata.json` 等）。Aider起動パラメータで明示的に指定可能（`--model-metadata-file /home/tomo/.aider.model.metadata.json`）。
+- **`map-tokens`**: トークンマップの最大サイズ。
+- **`timeout`**: API呼び出しのタイムアウト秒数。
+
+### 6.2. `~/.aider.model.settings.yml` (ロール定義・制御プロンプト)
+
+本ファイルでは、Aider が利用する各種モデルの役割（`edit_format`）や、行動境界を定義するプロンプト接頭辞（`system_prompt_prefix`）をモデルごとに設定する。
 
 ```yaml
-- name: ollama/qwen2.5-coder:7b
-  edit_format: editor-whole
-  system_prompt: |
-    You are an exact and reliable code editor.
-    Your primary task is to implement the architecture provided, utilizing the knowledge assets safely.
+- name: openrouter/deepseek/deepseek-v4-flash
+  edit_format: architect
+  system_prompt_prefix: |
+    You are an exact and reliable software architect.
+    Your primary task is to design changes based on the user's request, utilizing the provided knowledge assets safely.
 
     [CRITICAL RULES]
-    1. STRICT BOUNDARIES: You MUST use ONLY the documented APIs and integration patterns
-       found in `.ai-knowledge/` and `verified_examples/`.
-    2. NO INVENTION: Never invent interfaces, methods, or parameters.
-    3. ESCALATION: If the required implementation exceeds the provided knowledge or if
-       you are uncertain about a data structure, you must explicitly request clarification
-       from the Architect. Do not guess.
+    1. STRICT BOUNDARIES: You MUST use ONLY the documented APIs and integration patterns found in `.ai-knowledge/` and `verified_examples/`.
+    2. NO INVENTION: Never invent interfaces, methods, or parameters that are not documented in the knowledge assets.
+    3. ESCALATION: If the user request refers to or requires any class, function, method, parameter, or module that is not explicitly documented in the provided `.ai-knowledge/` files or `verified_examples/`, you MUST refuse to design or implement the change. Immediately output a response starting with: "ESCALATION: API <name> is undocumented." and stop. Do NOT guess, do NOT mock, and do NOT write stub classes, and do NOT proceed with the implementation.
 
-    Output ONLY the complete, fully updated file content. No chit-chat.
+- name: ollama/qwen2.5-coder:7b-instruct-q4_K_M
+  edit_format: editor-whole
+  system_prompt_prefix: |
+    You are an exact and reliable code developer.
+    Your task is to design and implement changes safely based on the user request.
+
+    [CRITICAL RULES]
+    1. STRICT BOUNDARIES: You MUST use ONLY the documented APIs in `.ai-knowledge/` and `verified_examples/`.
+    2. NO INVENTION: Never invent interfaces, methods, or parameters.
+    3. ESCALATION: If the user request refers to or requires any class, function, method, parameter, or module that is not explicitly documented in the `.ai-knowledge/` files or `verified_examples/`, you MUST refuse to proceed. Immediately respond with: "ESCALATION: API <name> is undocumented." and stop. Do NOT guess, do NOT mock, and do NOT implement stub classes, and do NOT write any implementation code.
+    4. Output ONLY the raw file content. Do NOT wrap the code in markdown code blocks or backticks.
 ```
+
+- **`system_prompt_prefix` の採用:** 既存の `system_prompt`（Aider全体のプロンプトを上書き）の代わりに `system_prompt_prefix` を使用し、Aider本来のプロトコル用命令を維持しつつ開発者の行動境界を定義する。
+- **エスカレーション・ルールの明記:** 必要な知識が `.ai-knowledge/` や `verified_examples/` に不足している場合、LLMによる憶測（ハルシネーション）を徹底的に排除するため、「インポートできない/実装できない」として即時エラー応答（`ESCALATION:`）を返すよう制御する。
 
 ---
 
@@ -149,3 +173,41 @@ model-settings-file: ~/.aider.model.settings.yml
 
 **APIメソッドレベルの統制:**
 許可されたモジュール内における架空のクラス・メソッドの呼び出しはASTでは静的型付けなしに判断できない。`pytest` によるランタイム実行時のTraceback に依存して検知・修復を行う設計となっている。
+
+---
+
+## 8. デプロイ・パイプライン (dsc/deploy.py)
+
+グローバルキャッシュ領域（`~/.knowledge-cache/`）に蓄積された「実行可能な知識資産（Executable Knowledge）」を、ターゲットプロジェクトのローカル環境へ自動展開するための配備メカニズム。本パイプラインは、シンボリックリンクを使用しない「実体コピー（Hard Copy）契約」に基づき動作する。
+
+### 8.1. 展開マッピングと処理フロー
+
+デプロイスクリプトを実行すると、指定されたパッケージおよびバージョンのアセットが以下のルールでプロジェクトのローカルディレクトリに展開される。
+
+1. **`integration_graph.md` → `.ai-knowledge/{package_name}.md`**
+   - パッケージ別の依存マップファイルを、パッケージ名に対応するMarkdownファイル名でコピーする。
+2. **`workflow_graph.md` → `.ai-knowledge/workflow_graph.md` (マージ処理)**
+   - 複数パッケージ（例: `ase` と `pacemaker`）が同時に展開される場合、それぞれの `workflow_graph.md` を解析し、自動的に連結・マージして単一の `workflow_graph.md` として書き出す。
+3. **`verified_examples/` → `verified_examples/`**
+   - 動作保証済みの実装例（Trust Score 0.9以上）をローカルに実体コピーする。
+4. **`verified_tests/` → `verified_tests/`**
+   - 疎通確認用テストファイルをローカルに実体コピーする。
+
+### 8.2. `api_schema.yaml` の自動生成と保護
+
+決定論的ゲートキーパー（AST-Based MVG）のインポートホワイトリストとなる `api_schema.yaml` を自動的に作成または更新する。
+
+- **差分追記（デフォルト）:** 既存の `api_schema.yaml` が既に存在する場合、デプロイ対象のパッケージ名を `allowed_imports` リストに自動追加する。この際、ユーザーが手動で定義した既存 of インポート許可（コメントや外部ライブラリ等）は削除・破壊されず、安全に保持される。
+- **強制上書き (`--force`):** 新規にクリーンな `api_schema.yaml` を生成し、デプロイパッケージと標準ライブラリ、テスト用ライブラリのみに初期化する。
+
+### 8.3. バージョン自動検出
+
+デプロイ時にバージョン指定が省略された場合（例: `--packages mesa`）、グローバルキャッシュ領域（`~/.knowledge-cache/mesa/`）を自動的にスキャンし、最も更新日時（mtime）の新しいバージョンを自動選択してデプロイする。
+
+### 8.4. 主要コマンドライン引数
+
+- `--project DIR`: **[必須]** 展開先のプロジェクトの絶対パス（例: `--project /home/tomo/project/001_abm/test`）。
+- `--packages PKG[=VER] ...`: **[manifestと排他]** デプロイするパッケージの指定。複数指定可能（例: `--packages ase=3.28.0 pacemaker=0.8.4`）。
+- `--manifest FILE`: **[packagesと排他]** `package_inspector.py` が生成した JSON マニフェストファイルを指定し、検出された依存パッケージを一括でデプロイする。
+- `--dry-run`: 実際のファイル書き込みや更新を行わず、実行されるコピーと生成内容をプレビューする。
+- `--force`: 既存のアセットや `api_schema.yaml` を警告なしに強制上書きする。

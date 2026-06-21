@@ -13,7 +13,6 @@ Tests cover:
 
 import copy
 import json
-import os
 import sys
 import tempfile
 import unittest
@@ -23,7 +22,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dsc.asset_synthesizer import (
-    KNOWLEDGE_CACHE,
     ApiEntry,
     load_report,
     build_api_index,
@@ -465,7 +463,7 @@ class TestGenerateWorkflowGraph(unittest.TestCase):
 
         output = generate_workflow_graph(index, report_many, tmpdir, "ase")
         # Count edges
-        edge_lines = [l for l in output.splitlines() if "-->" in l]
+        edge_lines = [line for line in output.splitlines() if "-->" in line]
         self.assertLessEqual(len(edge_lines), 15)
 
     def test_code_snippets(self):
@@ -816,6 +814,50 @@ class TestEdgeCases(unittest.TestCase):
         output = generate_workflow_graph(index, report, tmpdir, "ase")
         self.assertIn('N1["ase.Atoms"]', output)
         self.assertNotIn("-->", output)
+
+    def test_synthesize_with_llm(self):
+        """synthesize with use_llm=True should fetch semantic markdown using OpenRouter API."""
+        from unittest.mock import patch, MagicMock
+
+        # Prepare mock response
+        mock_response = MagicMock()
+        mock_response.__enter__.return_value = mock_response
+        mock_response.read.return_value = json.dumps({
+            "choices": [{
+                "message": {
+                    "content": "# ASE 3.28.0 — Integration Graph\n\n## Core API Constraints\n\n### Atoms\n- Constructor Signature: Atoms()\n"
+                }
+            }]
+        }).encode("utf-8")
+        
+        tmpdir = _make_cache_dir([
+            ("verified_examples/examples/00-n2cu.py", SAMPLE_CODE_00),
+        ])
+        _write_report(tmpdir, copy.deepcopy(SAMPLE_REPORT))
+
+        # We mock urllib.request.urlopen
+        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+            # We also mock _get_api_key to avoid environment variable errors
+            with patch("dsc.asset_synthesizer._get_api_key", return_value="fake-key"):
+                result = synthesize(
+                    tmpdir,
+                    "ase",
+                    "3.28.0",
+                    dry_run=False,
+                    use_llm=True,
+                    llm_model="deepseek/deepseek-v4-flash",
+                )
+                
+                # Check that urlopen was indeed called
+                mock_urlopen.assert_called_once()
+                
+                self.assertTrue(result["integration_graph_written"])
+                self.assertTrue(result["workflow_graph_written"])
+                
+                # Verify that integration_graph.md contains the LLM output
+                ig_content = (tmpdir / "integration_graph.md").read_text()
+                self.assertIn("# ASE 3.28.0 — Integration Graph", ig_content)
+                self.assertIn("Constructor Signature: Atoms()", ig_content)
 
 
 if __name__ == "__main__":

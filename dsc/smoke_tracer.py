@@ -38,18 +38,15 @@ import sys
 import os
 import ast
 import json
-import shutil
 import argparse
 import subprocess
 import tempfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
-
+from dsc.utils import load_manifest
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-
-KNOWLEDGE_CACHE = Path.home() / ".knowledge-cache"
 
 # External hard dependencies — make execution impossible in typical local env
 _EXTERNAL_HARD_DEPS = frozenset(
@@ -405,13 +402,19 @@ def extract_snippet(
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name == target_pkg or alias.name.startswith(target_pkg + "."):
-                    for ln in range(node.lineno, node.end_lineno + 1):
-                        import_line_nums.add(ln)
+                    start_line = node.lineno
+                    end_line = node.end_lineno
+                    if start_line is not None and end_line is not None:
+                        for ln in range(start_line, end_line + 1):
+                            import_line_nums.add(ln)
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
             if module == target_pkg or module.startswith(target_pkg + "."):
-                for ln in range(node.lineno, node.end_lineno + 1):
-                    import_line_nums.add(ln)
+                start_line = node.lineno
+                end_line = node.end_lineno
+                if start_line is not None and end_line is not None:
+                    for ln in range(start_line, end_line + 1):
+                        import_line_nums.add(ln)
         elif isinstance(node, ast.If):
             t = node.test
             if (
@@ -479,9 +482,9 @@ def extract_snippet(
 
     # Fallback: if we have no non-import content, use raw head
     non_import_lines = [
-        l
-        for l in result_lines
-        if l.strip() and not l.lstrip().startswith(("import ", "from "))
+        line
+        for line in result_lines
+        if line.strip() and not line.lstrip().startswith(("import ", "from "))
     ]
     if not non_import_lines:
         return "\n".join(lines[:max_lines])
@@ -811,10 +814,9 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
 
     if args.manifest:
-        mf = json.loads(Path(args.manifest).expanduser().read_text())
+        mf = load_manifest(args.manifest)
         pkg = mf["packages"][0]
         target = pkg["name"].lower()
-        version = pkg["version"]
         project = Path(mf["project"])
         venv = project / ".venv"
         cache_dir = Path(pkg["cache_path"]).expanduser()

@@ -32,9 +32,9 @@ class TestExtractSnippetMonolithicNodeFix(unittest.TestCase):
 
         # Should have non-import content (the function body)
         non_import = [
-            l
-            for l in snippet.splitlines()
-            if l.strip() and not l.lstrip().startswith(("import", "from"))
+            line
+            for line in snippet.splitlines()
+            if line.strip() and not line.lstrip().startswith(("import", "from"))
         ]
         self.assertTrue(
             non_import, f"Should have non-import content, got: {repr(snippet[:100])}"
@@ -79,9 +79,9 @@ class TestExtractSnippetMonolithicNodeFix(unittest.TestCase):
 
         # Should have non-import content (the class body)
         non_import = [
-            l
-            for l in snippet.splitlines()
-            if l.strip() and not l.lstrip().startswith(("import", "from"))
+            line
+            for line in snippet.splitlines()
+            if line.strip() and not line.lstrip().startswith(("import", "from"))
         ]
         self.assertTrue(
             non_import, f"Should have non-import content, got: {repr(snippet[:100])}"

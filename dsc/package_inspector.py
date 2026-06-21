@@ -22,7 +22,6 @@ Usage:
 """
 
 import sys
-import os
 import json
 import argparse
 import re
@@ -33,7 +32,7 @@ from typing import Optional
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-KNOWLEDGE_CACHE = Path.home() / ".knowledge-cache"
+from dsc.config import KNOWLEDGE_CACHE
 
 
 # ── Site-packages discovery ────────────────────────────────────────────────────

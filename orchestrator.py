@@ -4,7 +4,7 @@ import os
 import subprocess
 import shutil
 import ast
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 REAL_AIDER = "/home/tomo/.local/bin/aider"
 LOG_FILE = "/home/tomo/project/000_devenv/3tier_ai_devs/orchestrator.log"
@@ -35,6 +35,10 @@ def run_tests():
 
     cmd = [pytest_bin, "--json-report", f"--json-report-file={report_file}"]
     res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode == 4 and "unrecognized arguments" in (res.stderr or ""):
+        log("pytest-json-report plugin not found, falling back to regular pytest")
+        cmd = [pytest_bin]
+        res = subprocess.run(cmd, capture_output=True, text=True)
     log(f"Pytest exit code: {res.returncode}")
     
     # Return code 0 (all pass) or 5 (no tests found) are successes
