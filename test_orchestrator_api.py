@@ -19,8 +19,10 @@ class TestOrchestratorAPI(unittest.TestCase):
             self.lock_file.unlink()
 
     @patch("subprocess.run")
-    def test_successful_run_returns_structured_json(self, mock_run):
+    @patch("os.path.exists")
+    def test_successful_run_returns_structured_json(self, mock_exists, mock_run):
         """成功時、厳格なJSONスキーマ（辞書）で結果が返ること"""
+        mock_exists.return_value = True
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "All tests passed"
@@ -38,8 +40,10 @@ class TestOrchestratorAPI(unittest.TestCase):
         self.assertIn("src/dummy.py", result.get("files_changed", []))
 
     @patch("subprocess.run")
-    def test_timeout_handling(self, mock_run):
+    @patch("os.path.exists")
+    def test_timeout_handling(self, mock_exists, mock_run):
         """タイムアウト時、プロセスがハングせず status: timeout が返ること"""
+        mock_exists.return_value = True
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="aider", timeout=600)
 
         result = run_3tier_dev(
@@ -77,14 +81,14 @@ class TestOrchestratorAPI(unittest.TestCase):
             mock_result.returncode = 0
             mock_run.return_value = mock_result
             
-            run_3tier_dev("prompt", "ase", ["dummy.py"])
+            with patch("os.path.exists", return_value=True):
+                run_3tier_dev("prompt", "ase", ["dummy.py"])
 
     @patch("subprocess.run")
     @patch("os.path.exists")
     def test_fails_fast_if_knowledge_missing(self, mock_exists, mock_run):
         """知識(Knowledge)が存在しない場合、Aiderを起動せずに即時エラーを返すこと"""
-        # .ekp.lock は存在しない、.ai-knowledge/{pkg}.md も存在しない設定
-        mock_exists.side_effect = lambda path: False
+        mock_exists.return_value = False
         
         result = run_3tier_dev("prompt", "unknown_pkg", ["dummy.py"])
         
@@ -96,8 +100,7 @@ class TestOrchestratorAPI(unittest.TestCase):
     @patch("os.path.exists")
     def test_git_rollback_on_failure(self, mock_exists, mock_run):
         """修復ループが上限に達して失敗した場合、git reset --hard が呼ばれること"""
-        # 知識は存在する設定
-        mock_exists.side_effect = lambda p: True if "unknown_pkg" not in str(p) else False
+        mock_exists.return_value = True
         
         # Aiderが常に失敗する(returncode=1)ようにモック
         mock_result_fail = MagicMock()
@@ -111,7 +114,10 @@ class TestOrchestratorAPI(unittest.TestCase):
         # subprocess.run の呼び出し履歴を取得
         calls = mock_run.call_args_list
         # git reset --hard HEAD と git clean -fd が呼ばれているか確認
-        git_reset_called = any("reset" in call[0][0] and "--hard" in call[0][0] for call in calls)
+        git_reset_called = any(
+            "reset" in str(call[0][0]) and "--hard" in str(call[0][0])
+            for call in calls
+        )
         self.assertTrue(git_reset_called, "git reset --hard MUST be called on failure")
 
 if __name__ == "__main__":
