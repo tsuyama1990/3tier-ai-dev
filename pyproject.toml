@@ -45,7 +45,6 @@ ignore = [
 "test_*" = ["T201", "PLC0415", "ARG002", "SIM117", "E501", "RUF059", "RUF001", "RUF002", "RUF003", "SIM105", "F841"]
 
 [tool.mypy]
-python_executable = ".venv/bin/python"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
@@ -69,3 +68,8 @@ disallow_incomplete_defs = false
 module = "test_mcp_server,test_orchestrator_api"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+]
