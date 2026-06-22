@@ -589,6 +589,46 @@ Validation passed with {error_chunk.total_retries} retries.
 
         return "\n\n".join(context_parts) if context_parts else ""
 
+    def decompose_epic(self, epic: TaskSchema) -> list[TaskSchema]:
+        """
+        Decompose an EPIC task into actionable subtasks.
+        """
+        subtasks: list[TaskSchema] = []
+
+        # Rule 1: affected_modules >= 3 -> split by module
+        if len(epic.affected_modules) >= 3:
+            for idx, module in enumerate(epic.affected_modules, 1):
+                sub_id = f"{epic.task_id}-S{idx}"
+                subtask = TaskSchema(
+                    task_id=sub_id,
+                    parent_task_id=epic.task_id,
+                    manager_id=epic.manager_id,
+                    goal=f"Decomposed subtask for {module}: {epic.goal}",
+                    constraints=epic.constraints,
+                    acceptance_tests=[f"Verify changes to {module}"],
+                    affected_modules=[module],
+                    assumptions_required=epic.assumptions_required,
+                )
+                subtasks.append(subtask)
+        # Rule 2: constraints >= 5 -> split constraints
+        elif len(epic.constraints) >= 5:
+            for idx in range(0, len(epic.constraints), 2):
+                chunk = epic.constraints[idx : idx + 2]
+                sub_id = f"{epic.task_id}-C{idx // 2 + 1}"
+                subtask = TaskSchema(
+                    task_id=sub_id,
+                    parent_task_id=epic.task_id,
+                    manager_id=epic.manager_id,
+                    goal=f"Decomposed constraint chunk: {epic.goal}",
+                    constraints=chunk,
+                    acceptance_tests=epic.acceptance_tests,
+                    affected_modules=epic.affected_modules,
+                    assumptions_required=epic.assumptions_required,
+                )
+                subtasks.append(subtask)
+
+        return subtasks
+
 
 # ---------------------------------------------------------------------------
 # Convenience entry point
