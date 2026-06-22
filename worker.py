@@ -240,6 +240,9 @@ class WorkerAgent:
                 "mcp_server.py",
                 "test_orchestrator_api.py",
                 "test_mcp_server.py",
+                "rag_crawler.py",
+                "adversarial_tester.py",
+                "task_tree.py",
             }:
                 continue
             if "dsc" in py_file.parts:
