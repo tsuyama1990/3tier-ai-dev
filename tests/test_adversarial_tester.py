@@ -65,6 +65,7 @@ class TestRunAdversarialTests:
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "All tests passed"
+        mock_result.stderr = ""
         mock_run.return_value = mock_result
 
         success, output = tester.run_adversarial_tests("tests/test_adversarial_generated.py")
@@ -77,6 +78,8 @@ class TestRunAdversarialTests:
         mock_result = MagicMock()
         mock_result.returncode = 1
         mock_result.stdout = "Tests failed"
+        mock_result.stderr = ""
+        mock_run.value = mock_result
         mock_run.return_value = mock_result
 
         success, output = tester.run_adversarial_tests("tests/test_adversarial_generated.py")
