@@ -179,6 +179,74 @@ def run_managed_task(task_schema: dict) -> dict:
 
 
 @mcp.tool()
+def run_epic_task(epic_schema: dict, max_workers: int = 4) -> dict:
+    """
+    EPIC タスクを受け取り、サブタスクに分解して並列実行する。
+    """
+    try:
+        from task_tree import TaskTree
+        epic = TaskSchema(**epic_schema)
+        manager = ManagerAgent(manager_id=epic.manager_id)
+        worker = WorkerAgent()
+
+        # Decompose
+        subtasks = manager.decompose_epic(epic)
+
+        # Build tree and execute
+        tree = TaskTree()
+        tree.decompose(epic, subtasks)
+
+        results = tree.execute_parallel(worker, manager, max_workers=max_workers)
+        summary = tree.get_summary()
+
+        # Determine overall status
+        root_node = tree._nodes.get(epic.task_id)
+        status = root_node.status if root_node else "failed"
+
+        # Collect generated ADR paths for successful subtasks
+        adr_paths = []
+        for tid, node in tree._nodes.items():
+            if node.status == "success" and tid != epic.task_id:
+                try:
+                    if node.result and "error_chunk_summary" in node.result:
+                        adr_path = manager.generate_adr(node.task, node.result["error_chunk_summary"])
+                        adr_paths.append(adr_path)
+                except Exception:
+                    pass
+
+        # Determine overall status string
+        if all(n.status == "success" for n in tree._nodes.values() if n.parent_id is not None):
+            overall_status = "success"
+        elif any(n.status == "success" for n in tree._nodes.values() if n.parent_id is not None):
+            overall_status = "partial"
+        else:
+            overall_status = "failed"
+
+        return {
+            "status": overall_status,
+            "epic_task_id": epic.task_id,
+            "summary": summary,
+            "subtask_results": {tid: res for tid, res in results.items() if tid != epic.task_id},
+            "adr_paths": adr_paths,
+        }
+    except Exception as e:
+        return {
+            "status": "failed",
+            "epic_task_id": epic_schema.get("task_id", "unknown"),
+            "summary": {
+                "total": 1,
+                "success": 0,
+                "failed": 1,
+                "escalated": 0,
+                "task_results": {}
+            },
+            "subtask_results": {},
+            "adr_paths": [],
+            "error": str(e)
+        }
+
+
+@mcp.tool()
 def generate_task_id(goal: str) -> dict:
     """
     Generate a deterministic task ID from a goal string.
