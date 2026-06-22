@@ -118,6 +118,9 @@ class WorkerAgent:
                     "git_diff": git_diff,
                 }
 
+            # Print failure output for diagnostic visibility
+            print(f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n", file=sys.stderr)
+
             # --- Failure handling ---
             error_chunk.add_entry(
                 ErrorChunkEntry(
