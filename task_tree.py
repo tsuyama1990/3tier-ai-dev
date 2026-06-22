@@ -1,9 +1,13 @@
 """TaskTree implementation for parallel execution of decomposed tasks."""
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Optional
-import threading
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from manager import ManagerAgent
+    from worker import WorkerAgent
 
 from schemas.task_schema import TaskSchema
 
@@ -22,7 +26,7 @@ class TaskTree:
         self._nodes: dict[str, TaskNode] = {}  # task_id -> TaskNode
         self._lock = threading.Lock()
 
-    def add_task(self, task: TaskSchema, parent_id: Optional[str] = None) -> TaskNode:
+    def add_task(self, task: TaskSchema, parent_id: str | None = None) -> TaskNode:
         """Add a task to the tree. If parent_id is provided, associate it as a child."""
         with self._lock:
             node = TaskNode(task=task, parent_id=parent_id)
@@ -102,12 +106,11 @@ class TaskTree:
         # Execute target tasks in parallel
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_node = {executor.submit(run_single_node, node): node for node in targets}
-            for future in future_to_node:
+            for future, node in future_to_node.items():
                 try:
                     tid, res = future.result()
                     results[tid] = res
                 except Exception as e:
-                    node = future_to_node[future]
                     err_res = {
                         "status": "failed",
                         "error": str(e)

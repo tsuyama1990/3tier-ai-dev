@@ -134,7 +134,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
 
         worker = MagicMock()
         # Mocking task execution success for S1, failure for S2
-        def worker_side_effect(task, plan, run_adversarial=False):
+        def worker_side_effect(task, _plan, _run_adversarial=False):
             if task.task_id == sub_id1:
                 return {"status": "success", "git_diff": "diff", "error_chunk_summary": MagicMock(total_retries=0)}
             return {"status": "failed", "error_chunk_summary": MagicMock(total_retries=3)}
@@ -204,8 +204,8 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
             "assumptions_required": {}
         }
         # Mock execute_verification_loop to run cleanly
-        import worker
         import manager
+        import worker
         orig_evl = worker.WorkerAgent.execute_verification_loop
         orig_triage = manager.ManagerAgent.triage
         orig_validate = manager.ManagerAgent.validate_outcome

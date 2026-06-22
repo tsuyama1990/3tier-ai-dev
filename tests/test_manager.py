@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
+from manager import ManagerAgent
 from schemas.task_schema import (
     ErrorChunkEntry,
     ErrorChunkSummary,
@@ -15,8 +16,6 @@ from schemas.task_schema import (
     HelpRequestSchema,
     TaskSchema,
 )
-from manager import ManagerAgent
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -100,7 +99,8 @@ class TestTriageReject:
 
     def test_triage_reject_invalid_schema(self) -> None:
         """Pydantic バリデーション失敗でエラーが発生すること"""
-        with pytest.raises(Exception):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
             TaskSchema(
                 task_id="bad-id",
                 manager_id="MGR",
