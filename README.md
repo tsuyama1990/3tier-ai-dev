@@ -103,7 +103,7 @@ For setup guides for MCP servers, Aider prompt configurations, and parameter tun
 All test suites reside in the `tests/` directory:
 
 ```bash
-pytest -v
+pytest -v --ignore=tests/step4_ollama_synthesizer/fixtures/
 ```
 
 - **[tests/test_e2e.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_e2e.py)**: Full end-to-end pipeline verification.
@@ -111,3 +111,43 @@ pytest -v
 - **[tests/test_asset_synthesizer.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_asset_synthesizer.py)**: Offline and LLM-based graph synthesis.
 - **[tests/test_smoke_tracer.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_smoke_tracer.py)**: Code snippet AST extraction tests.
 - **[tests/test_orchestrator.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_orchestrator.py)**: self-healing loop and cleanup test.
+- **[tests/test_task_tree.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_task_tree.py)**: Concurrent task tree decomposition and parallel execution.
+- **[tests/test_rag_crawler.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_rag_crawler.py)**: Semantic check and conflict finder for assumptions.
+- **[tests/test_adversarial_tester.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/test_adversarial_tester.py)**: Edge case validation testing and patch reports.
+
+---
+
+## 7. MCP-Driven Development & Agent Workflow
+
+The platform leverages a **Manager-Worker (Tier 2 / Tier 3) Architecture** where development is outsourced to LLMs through MCP tools, rather than agents making direct file modifications.
+
+### 7.1 Concept
+1. **Director Agent (Antigravity/Client)**: Creates plans and constructs task schema inputs.
+2. **Manager Agent (`manager.py`)**: Triages tasks, validates constraints via RAG crawl of decisions, and performs LLM review.
+3. **Worker Agent (`worker.py`)**: Executes Aider self-healing loops to automatically fix test and import violations.
+
+### 7.2 Configuration & Rules
+For agents (like Antigravity) to default to MCP execution:
+1. **Rule File (`.cursorrules`)**: Ensure `.cursorrules` is present in the workspace root to forbid direct codebase editing and mandate tool calls.
+2. **Config file (`mcp_config.json`)**: Configures the MCP server path and environment settings.
+3. **Run Script (`run-mcp.sh`)**: Sours local settings (like `OPENROUTER_API_KEY`) and starts the server.
+
+### 7.3 Executing MCP Tasks
+To request the AI agent to implement a feature, use the `run_managed_task` tool with a payload:
+
+```json
+{
+  "task_id": "T-20260623001000-a1b2c3",
+  "manager_id": "MGR-Auth-01",
+  "goal": "Implement JWT validation middleware",
+  "constraints": ["No external libraries outside api_schema.yaml"],
+  "acceptance_tests": ["Valid token passes", "Expired token returns 401"],
+  "affected_modules": ["src/middleware/auth.py"],
+  "assumptions_required": {"api_schema_version": "v1.2"}
+}
+```
+
+For epic tasks, use `run_epic_task` to decompose and execute in parallel:
+```bash
+# Call run_epic_task tool on the EKP-Forge MCP server
+```

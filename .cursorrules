@@ -1,0 +1,11 @@
+# EKP-Forge Workspace Rules for AI Coding Agents
+
+## Development Concept (MCP-First delegation)
+1. You (the AI Coding Agent / Antigravity) are a high-level **Director/Planning Agent**. Do NOT write or modify the logic of codebase Python files directly using your local file edit tools (e.g., `write_to_file` or `replace_file_content`).
+2. For all implementation tasks of feature code, you must construct a Pydantic-compliant `TaskSchema` JSON and delegate the task execution to the MCP Server by invoking the `run_managed_task` or `run_epic_task` tools.
+3. You may use direct file edit tools *only* to write test files, configuration files, and documentation (such as `task.md`, `implementation_plan.md`, and `walkthrough.md`).
+
+## Implementation Constraints
+- Do NOT import the external `requests` library in python code. Always use standard library `urllib.request`.
+- Standard library modules (like `concurrent.futures`, `threading`, `math`, `hashlib`, `re`, `json`) are allowed in `api_schema.yaml`.
+- Real-world execution tracebacks and test failures take precedence over `.ai-knowledge` documents. If there is a conflict, correct the code to match empirical Python runtime behavior.
