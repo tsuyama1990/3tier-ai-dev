@@ -126,6 +126,7 @@ class WorkerAgent:
                 }
 
                 if run_adversarial:
+                    test_file = None
                     try:
                         from adversarial_tester import AdversarialTester
                         tester = AdversarialTester()
@@ -137,6 +138,12 @@ class WorkerAgent:
                     except Exception as e:
                         result["patch_report"] = {"error": f"Adversarial audit failed: {e!s}"}
                         result["adversarial_passed"] = False
+                    finally:
+                        if test_file and os.path.exists(test_file):
+                            try:
+                                os.remove(test_file)
+                            except Exception:
+                                pass
 
                 return result
 
