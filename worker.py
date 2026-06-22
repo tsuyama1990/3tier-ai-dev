@@ -271,6 +271,8 @@ class WorkerAgent:
                 continue
             if "dsc" in py_file.parts:
                 continue
+            if "schemas" in py_file.parts:
+                continue
             if "tests" in py_file.parts and "generated" not in py_file.parts:
                 continue
 

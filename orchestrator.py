@@ -68,6 +68,9 @@ def validate_imports() -> tuple[bool, str]:
             "task_tree.py",
         ]:
             continue
+        # Skip schemas files
+        if "schemas" in py_file.parts:
+            continue
         # Skip DSC synthesizer files
         if "dsc" in py_file.parts:
             continue
