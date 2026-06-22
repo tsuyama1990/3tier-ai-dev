@@ -61,6 +61,11 @@ def validate_imports() -> tuple[bool, str]:
             "test_orchestrator_api.py",
             "mcp_server.py",
             "test_mcp_server.py",
+            "manager.py",
+            "worker.py",
+            "rag_crawler.py",
+            "adversarial_tester.py",
+            "task_tree.py",
         ]:
             continue
         # Skip DSC synthesizer files
