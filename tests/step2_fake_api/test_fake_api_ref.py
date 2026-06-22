@@ -38,9 +38,10 @@ def test_fake_api_reference():
 
     # Temporarily create api_schema.yaml to allow fake_lib imports
     schema_path = Path("api_schema.yaml")
-    schema_existed = schema_path.exists()
-    if not schema_existed:
-        schema_path.write_text("allowed_imports:\n  - fake_lib\n  - typing\n")
+    schema_backup = None
+    if schema_path.exists():
+        schema_backup = schema_path.read_text(encoding="utf-8")
+    schema_path.write_text("allowed_imports:\n  - fake_lib\n  - typing\n", encoding="utf-8")
 
     try:
         # Force Ollama model via explicit --model override
@@ -53,8 +54,10 @@ def test_fake_api_reference():
             skip_self_healing=True,
         )
     finally:
-        # Clean up temporary api_schema.yaml
-        if not schema_existed and schema_path.exists():
+        # Restore or clean up temporary api_schema.yaml
+        if schema_backup is not None:
+            schema_path.write_text(schema_backup, encoding="utf-8")
+        elif schema_path.exists():
             schema_path.unlink()
 
     # Log result for debugging
