@@ -79,12 +79,17 @@ class ManagerAgent:
                             f"import '{pkg}' which is not in api_schema.yaml allowed_imports ({allowed_imports})"
                         )
 
-        # 2b: Check decisions/ ADRs for conflicting assumptions
-        if self._decisions_dir.exists():
-            for adr_file in sorted(self._decisions_dir.glob("*.md")):
-                conflict = self._check_adr_conflict(adr_file, task)
-                if conflict:
-                    return conflict
+        # 2b: Check decisions/ ADRs for conflicting assumptions (RAG Crawler)
+        from rag_crawler import AssumptionRAGCrawler
+        crawler = AssumptionRAGCrawler(self._decisions_dir)
+        crawler.build_index()
+        conflicts = crawler.check_assumption_conflicts(task.assumptions_required)
+        if conflicts:
+            msgs = [
+                f"{c['key']}: ADR expects {c['adr_value']!r}, task has {c['new_value']!r}"
+                for c in conflicts
+            ]
+            return f"Assumption violated (RAG): {'; '.join(msgs)}"
 
         return None
 
@@ -125,18 +130,16 @@ class ManagerAgent:
             "## Relevant ADRs",
         ]
 
-        # Attach relevant ADR summaries
-        if self._decisions_dir.exists():
-            for adr_file in sorted(self._decisions_dir.glob("*.md")):
-                try:
-                    content = adr_file.read_text(encoding="utf-8")
-                    # Extract Decision section
-                    decision_match = re.search(r"## 3\. Decision\s*\n(.*?)(?=\n##|\Z)", content, re.DOTALL)
-                    if decision_match:
-                        summary = decision_match.group(1).strip()[:200]
-                        lines.append(f"- [{adr_file.stem}] {summary}")
-                except OSError:
-                    pass
+        # Attach relevant ADR summaries (using RAG search)
+        from rag_crawler import AssumptionRAGCrawler
+        crawler = AssumptionRAGCrawler(self._decisions_dir)
+        crawler.build_index()
+
+        query = task.goal + " " + " ".join(task.constraints)
+        relevant = crawler.search(query, top_k=3)
+        for r in relevant:
+            summary = r["decision"][:200]
+            lines.append(f"- [{r['file']}] (relevance: {r['score']:.2f}) {summary}")
 
         lines.extend(
             [
