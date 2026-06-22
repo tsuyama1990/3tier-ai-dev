@@ -19,3 +19,7 @@ allowed_imports:
   - enum
   - collections
   - pydantic
+  - schemas
+  - rag_crawler
+  - adversarial_tester
+  - task_tree
