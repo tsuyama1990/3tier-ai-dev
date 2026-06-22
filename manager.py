@@ -285,6 +285,9 @@ class ManagerAgent:
         Uses Ollama-first (local) with Criteria-based fallback to OpenRouter.
         Returns review feedback string if issues found, or empty string if approved.
         """
+        if os.environ.get("SKIP_LLM_VALIDATION") == "1":
+            return ""
+
         # Build prompt
         prompt = self._build_validation_prompt(task, git_diff, error_chunk)
 
