@@ -3,7 +3,7 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from manager import ManagerAgent
@@ -16,9 +16,9 @@ from schemas.task_schema import TaskSchema
 class TaskNode:
     task: TaskSchema
     status: str = "pending"  # pending | running | success | failed | escalated
-    result: Optional[dict] = None
+    result: dict | None = None
     children: list["TaskNode"] = field(default_factory=list)
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
 
 
 class TaskTree:

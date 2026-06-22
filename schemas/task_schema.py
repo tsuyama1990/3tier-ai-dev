@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Optional
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 
 # ---------------------------------------------------------------------------
 # 1. Task Schema (Tier 1 → Tier 2)
@@ -21,7 +20,7 @@ class TaskSchema(BaseModel):
     model_config = ConfigDict(strict=True)
 
     task_id: str = Field(pattern=r"^T-\d{14}-[a-f0-9]{6}$")
-    parent_task_id: Optional[str] = None
+    parent_task_id: str | None = None
     manager_id: str
     goal: str = Field(max_length=200, min_length=1)
     constraints: list[str] = Field(min_length=1)
@@ -30,7 +29,7 @@ class TaskSchema(BaseModel):
     assumptions_required: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _validate_affected_modules_have_py_ext(self) -> "TaskSchema":
+    def _validate_affected_modules_have_py_ext(self) -> TaskSchema:
         for mod in self.affected_modules:
             if not mod.endswith(".py"):
                 raise ValueError(f"affected_module '{mod}' must end with '.py'")
@@ -42,7 +41,7 @@ class TaskSchema(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class EscalationReason(str, Enum):
+class EscalationReason(StrEnum):
     CYCLIC_ERROR = "cyclic_error"
     CONTEXT_MISSING = "missing_context"
     CONFIDENCE_DROP = "confidence_drop"
@@ -59,7 +58,7 @@ class HelpRequestSchema(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     attempts: list[str] = Field(default_factory=list)
     needed_information: list[str] = Field(default_factory=list)
-    current_diff_stash: Optional[str] = None
+    current_diff_stash: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +140,7 @@ class AgentScorecard(BaseModel):
 
 def _generate_task_id(goal: str) -> str:
     """Deterministic task ID based on timestamp + goal hash."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     goal_hash = hashlib.sha256(goal.encode()).hexdigest()[:6]
     return f"T-{timestamp}-{goal_hash}"
 

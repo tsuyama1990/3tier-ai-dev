@@ -1,10 +1,9 @@
 """Unit tests for AssumptionRAGCrawler."""
 
-import json
 import shutil
 import tempfile
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 from rag_crawler import AssumptionRAGCrawler
 

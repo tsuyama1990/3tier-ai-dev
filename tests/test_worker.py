@@ -7,15 +7,10 @@ from unittest.mock import patch
 import pytest
 
 from schemas.task_schema import (
-    ErrorChunkEntry,
-    ErrorChunkSummary,
     EscalationReason,
-    HelpRequestSchema,
     TaskSchema,
-    _estimate_confidence,
 )
 from worker import WorkerAgent
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

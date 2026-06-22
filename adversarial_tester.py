@@ -8,7 +8,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -138,7 +138,7 @@ Do NOT write any explanation outside the code block.
 
         return {
             "task_id": task.task_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "verification_retries": retries,
             "adversarial_tests_generated": 1,
             "adversarial_tests_passed": adv_passed,

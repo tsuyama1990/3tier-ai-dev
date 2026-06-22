@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -17,7 +16,6 @@ from schemas.task_schema import (
     TaskSchema,
     _generate_task_id,
 )
-
 
 # ---------------------------------------------------------------------------
 # Manager Agent
@@ -245,7 +243,7 @@ class ManagerAgent:
 
         return (True, "")
 
-    def _static_validation(self, task: TaskSchema, git_diff: str) -> str:
+    def _static_validation(self, _task: TaskSchema, git_diff: str) -> str:
         """Perform static analysis on the diff without LLM calls."""
         findings: list[str] = []
 
@@ -332,6 +330,7 @@ class ManagerAgent:
 Goal: {task.goal}
 Constraints: {", ".join(task.constraints)}
 Acceptance Tests: {", ".join(task.acceptance_tests)}
+{error_summary}
 
 ## Git Diff
 ```diff
@@ -363,8 +362,8 @@ Decision: APPROVE
 
     def _call_ollama(self, prompt: str) -> str | None:
         """Call Ollama API via urllib.request. Returns response text or None on failure."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         data = json.dumps(
             {
@@ -389,8 +388,8 @@ Decision: APPROVE
 
     def _call_openrouter(self, prompt: str) -> str | None:
         """Call OpenRouter API via urllib.request. Returns response text or None on failure."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         if not api_key:
@@ -466,8 +465,8 @@ Decision: APPROVE
 
         Returns the file path of the saved ADR.
         """
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        filename_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        filename_ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         adr_filename = f"{filename_ts}_{task.task_id}.md"
         adr_path = self._decisions_dir / adr_filename
 
@@ -480,11 +479,7 @@ Decision: APPROVE
             error_table += "| — | None | — | — |\n"
 
         # Build validation history
-        val_history = ""
-        if validation_history:
-            val_history = "\n".join(f"- {h}" for h in validation_history)
-        else:
-            val_history = "No rework cycles."
+        val_history = "\n".join(f"- {h}" for h in validation_history) if validation_history else "No rework cycles."
 
         # Build the ADR content from template
         adr_content = f"""# ADR: {task.task_id} — {task.goal}
@@ -597,7 +592,7 @@ Validation passed with {error_chunk.total_retries} retries.
 
         # Rule 1: affected_modules >= 3 -> split by module
         if len(epic.affected_modules) >= 3:
-            for idx, module in enumerate(epic.affected_modules, 1):
+            for _idx, module in enumerate(epic.affected_modules, 1):
                 sub_id = _generate_task_id(f"{epic.task_id}-subtask-{module}")
                 subtask = TaskSchema(
                     task_id=sub_id,
@@ -635,4 +630,4 @@ Validation passed with {error_chunk.total_retries} retries.
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("ManagerAgent module loaded successfully.")
+    pass

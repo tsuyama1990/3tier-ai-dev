@@ -199,10 +199,6 @@ def run_epic_task(epic_schema: dict, max_workers: int = 4) -> dict:
         results = tree.execute_parallel(worker, manager, max_workers=max_workers)
         summary = tree.get_summary()
 
-        # Determine overall status
-        root_node = tree._nodes.get(epic.task_id)
-        status = root_node.status if root_node else "failed"
-
         # Collect generated ADR paths for successful subtasks
         adr_paths = []
         for tid, node in tree._nodes.items():

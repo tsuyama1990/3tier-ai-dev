@@ -123,7 +123,7 @@ class AssumptionRAGCrawler:
         return results[:top_k]
 
     def check_assumption_conflicts(
-        self, new_assumptions: dict[str, Any], threshold: float = 0.7
+        self, new_assumptions: dict[str, Any], _threshold: float = 0.7
     ) -> list[dict[str, Any]]:
         """
         Identify conflicting assumptions (matching keys but mismatched values).
@@ -131,14 +131,13 @@ class AssumptionRAGCrawler:
         conflicts = []
         for doc in self._index:
             for key, val in new_assumptions.items():
-                if key in doc["assumptions"]:
-                    if doc["assumptions"][key] != val:
-                        conflicts.append({
-                            "adr_file": doc["file"],
-                            "key": key,
-                            "adr_value": doc["assumptions"][key],
-                            "new_value": val,
-                        })
+                if key in doc["assumptions"] and doc["assumptions"][key] != val:
+                    conflicts.append({
+                        "adr_file": doc["file"],
+                        "key": key,
+                        "adr_value": doc["assumptions"][key],
+                        "new_value": val,
+                    })
         return conflicts
 
     # -------------------------------------------------------------------

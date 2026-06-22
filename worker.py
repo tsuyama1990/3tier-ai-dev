@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -128,7 +129,7 @@ class WorkerAgent:
                     try:
                         from adversarial_tester import AdversarialTester
                         tester = AdversarialTester()
-                        test_file, test_content = tester.generate_edge_case_tests(task, git_diff, model=self.model)
+                        test_file, _ = tester.generate_edge_case_tests(task, git_diff, model=self.model)
                         adv_ok, adv_output = tester.run_adversarial_tests(test_file)
                         patch_report = tester.generate_patch_report(task, result, (adv_ok, adv_output))
                         result["patch_report"] = patch_report
@@ -140,7 +141,7 @@ class WorkerAgent:
                 return result
 
             # Print failure output for diagnostic visibility
-            print(f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n", file=sys.stderr)
+            print(f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n", file=sys.stderr)  # noqa: T201
 
             # --- Failure handling ---
             error_chunk.add_entry(
@@ -184,7 +185,7 @@ class WorkerAgent:
     # Internal helpers
     # -------------------------------------------------------------------
 
-    def _build_aider_command(self, task: Any, plan: str, rag_context: str) -> list[str]:
+    def _build_aider_command(self, task: Any, plan: str, _rag_context: str) -> list[str]:
         """Build the Aider CLI command from the task and plan."""
         cmd = [
             "aider",
@@ -221,7 +222,7 @@ class WorkerAgent:
             except Exception:
                 pass
 
-    def _run_aider(self, cmd: list[str], attempt: int, timeout: int = 600) -> tuple[bool, str]:
+    def _run_aider(self, cmd: list[str], _attempt: int, timeout: int = 600) -> tuple[bool, str]:
         """Execute Aider and return (success, message_or_output)."""
         try:
             res = subprocess.run(
@@ -434,7 +435,7 @@ class WorkerAgent:
     def _update_reflection_log(self, task: Any, error_chunk: ErrorChunkSummary, success: bool) -> None:
         """Update both global and project-local reflection logs (v4.0 Phase 1)."""
         try:
-            from datetime import datetime, timezone
+            from datetime import datetime
 
             if not error_chunk.entries:
                 return  # No failures to reflect on
@@ -446,7 +447,7 @@ class WorkerAgent:
 
             entry = ReflectionEntry(
                 task_id=task.task_id,
-                timestamp=datetime.now(timezone.utc).isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
                 trigger=f"{'Success' if success else 'Failure'} after {error_chunk.total_retries} retries",
                 root_cause=root_cause,
                 actionable_tactic=tactic,
@@ -561,4 +562,4 @@ class WorkerAgent:
 
 if __name__ == "__main__":
     # Quick self-test
-    print("WorkerAgent module loaded successfully.")
+    pass
