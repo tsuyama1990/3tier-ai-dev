@@ -73,8 +73,8 @@ class AssumptionRAGCrawler:
         self._idf = {}
         for token in all_tokens:
             doc_count = sum(1 for doc in self._index if token in doc["tokens"])
-            # Smooth IDF to prevent zero division
-            self._idf[token] = math.log(total_docs / doc_count) if doc_count > 0 else 0.0
+            # Smooth IDF (scikit-learn style) to ensure IDF is never zero
+            self._idf[token] = math.log((1 + total_docs) / (1 + doc_count)) + 1.0
 
     def search(self, query: str, top_k: int = 3) -> list[dict[str, Any]]:
         """
