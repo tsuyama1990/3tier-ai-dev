@@ -598,7 +598,7 @@ Validation passed with {error_chunk.total_retries} retries.
         # Rule 1: affected_modules >= 3 -> split by module
         if len(epic.affected_modules) >= 3:
             for idx, module in enumerate(epic.affected_modules, 1):
-                sub_id = f"{epic.task_id}-S{idx}"
+                sub_id = _generate_task_id(f"{epic.task_id}-subtask-{module}")
                 subtask = TaskSchema(
                     task_id=sub_id,
                     parent_task_id=epic.task_id,
@@ -614,7 +614,7 @@ Validation passed with {error_chunk.total_retries} retries.
         elif len(epic.constraints) >= 5:
             for idx in range(0, len(epic.constraints), 2):
                 chunk = epic.constraints[idx : idx + 2]
-                sub_id = f"{epic.task_id}-C{idx // 2 + 1}"
+                sub_id = _generate_task_id(f"{epic.task_id}-constraint-{idx}")
                 subtask = TaskSchema(
                     task_id=sub_id,
                     parent_task_id=epic.task_id,
