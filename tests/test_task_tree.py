@@ -57,7 +57,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
                 parent_task_id="T-20260623000000-a1b2c3",
                 manager_id="MGR-Epic-01",
                 goal=f"Goal {i}",
-                constraints=[],
+                constraints=["Constraint A"],
                 acceptance_tests=[],
                 affected_modules=[f"src/module{i}.py"],
                 assumptions_required={}
@@ -78,7 +78,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
                 parent_task_id="T-20260623000000-a1b2c3",
                 manager_id="MGR-Epic-01",
                 goal="Sub goal 1",
-                constraints=[],
+                constraints=["Constraint A"],
                 acceptance_tests=[],
                 affected_modules=["src/module1.py"],
                 assumptions_required={}
@@ -114,7 +114,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
                 parent_task_id="T-20260623000000-a1b2c3",
                 manager_id="MGR-Epic-01",
                 goal="Sub goal 1",
-                constraints=[],
+                constraints=["Constraint A"],
                 acceptance_tests=[],
                 affected_modules=["src/module1.py"],
                 assumptions_required={}
@@ -124,7 +124,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
                 parent_task_id="T-20260623000000-a1b2c3",
                 manager_id="MGR-Epic-01",
                 goal="Sub goal 2",
-                constraints=[],
+                constraints=["Constraint A"],
                 acceptance_tests=[],
                 affected_modules=["src/module2.py"],
                 assumptions_required={}
