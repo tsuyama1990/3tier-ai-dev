@@ -54,9 +54,10 @@ class WorkerAgent:
         task: Any,  # TaskSchema (avoid import-time circular issues with typing)
         plan: str,
         rag_context: str = "",
+        run_adversarial: bool = True,
     ) -> dict[str, Any]:
         """
-        Run Aider + pytest in a loop with escalation policy.
+        Run Aider + pytest in a loop with escalation policy and optional adversarial auditing.
 
         Returns:
             {
@@ -65,6 +66,8 @@ class WorkerAgent:
                 "error_chunk_summary": ErrorChunkSummary,
                 "help_request": HelpRequestSchema | None,
                 "git_diff": str,   # present on "success"
+                "patch_report": dict | None,
+                "adversarial_passed": bool | None,
             }
         """
         from schemas.task_schema import TaskSchema  # local import
@@ -110,13 +113,31 @@ class WorkerAgent:
                 # Success!
                 git_diff = self._get_git_diff()
                 self._update_reflection_log(task, error_chunk, success=True)
-                return {
+                
+                result = {
                     "status": "success",
                     "retries": attempt,
                     "error_chunk_summary": error_chunk,
                     "help_request": None,
                     "git_diff": git_diff,
+                    "patch_report": None,
+                    "adversarial_passed": None,
                 }
+
+                if run_adversarial:
+                    try:
+                        from adversarial_tester import AdversarialTester
+                        tester = AdversarialTester()
+                        test_file, test_content = tester.generate_edge_case_tests(task, git_diff, model=self.model)
+                        adv_ok, adv_output = tester.run_adversarial_tests(test_file)
+                        patch_report = tester.generate_patch_report(task, result, (adv_ok, adv_output))
+                        result["patch_report"] = patch_report
+                        result["adversarial_passed"] = adv_ok
+                    except Exception as e:
+                        result["patch_report"] = {"error": f"Adversarial audit failed: {e!s}"}
+                        result["adversarial_passed"] = False
+
+                return result
 
             # Print failure output for diagnostic visibility
             print(f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n", file=sys.stderr)
