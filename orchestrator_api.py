@@ -127,7 +127,7 @@ def run_3tier_dev(
                     "stdout": res.stdout,
                     "stderr": res.stderr
                 }
-            orchestrator.log("Validation failed with skip_self_healing=True.")
+            orchestrator.log(f"Validation failed with skip_self_healing=True. Details: {test_log}")
             orchestrator.log("Performing git rollback due to failure...")
             try:
                 subprocess.run(["git", "reset", "--hard", "HEAD"], capture_output=True, check=False)
