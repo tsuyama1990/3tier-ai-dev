@@ -1,3 +1,21 @@
 allowed_imports:
   - builtins
   - typing
+  - concurrent
+  - threading
+  - math
+  - hashlib
+  - re
+  - json
+  - os
+  - pathlib
+  - datetime
+  - yaml
+  - ast
+  - subprocess
+  - sys
+  - urllib
+  - dataclasses
+  - enum
+  - collections
+  - pydantic
