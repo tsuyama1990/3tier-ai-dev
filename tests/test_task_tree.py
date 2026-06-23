@@ -10,7 +10,6 @@ from ekp_forge.task_tree import TaskTree
 
 
 class TestTaskTreeAndDecomposition(unittest.TestCase):
-
     def setUp(self) -> None:
         self.epic_task = TaskSchema(
             task_id="T-20260623000000-a1b2c3",
@@ -19,7 +18,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
             constraints=["Constraint A", "Constraint B"],
             acceptance_tests=["Acceptance Test 1"],
             affected_modules=["src/module1.py", "src/module2.py", "src/module3.py"],
-            assumptions_required={"api_schema_version": "v1.2"}
+            assumptions_required={"api_schema_version": "v1.2"},
         )
         self.tree = TaskTree()
         self.manager = ManagerAgent(manager_id="MGR-Epic-01")
@@ -42,7 +41,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
             constraints=["Constraint A"],
             acceptance_tests=["Acceptance 1"],
             affected_modules=["src/module1.py"],
-            assumptions_required={}
+            assumptions_required={},
         )
         node = self.tree.add_task(subtask, parent_id="T-20260623000000-a1b2c3")
         self.assertEqual(node.parent_id, "T-20260623000000-a1b2c3")
@@ -60,8 +59,9 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
                 constraints=["Constraint A"],
                 acceptance_tests=[],
                 affected_modules=[f"src/module{i}.py"],
-                assumptions_required={}
-            ) for i in (1, 2)
+                assumptions_required={},
+            )
+            for i in (1, 2)
         ]
         self.tree.decompose(self.epic_task, subtasks)
         root = self.tree._nodes["T-20260623000000-a1b2c3"]
@@ -81,7 +81,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
                 constraints=["Constraint A"],
                 acceptance_tests=[],
                 affected_modules=["src/module1.py"],
-                assumptions_required={}
+                assumptions_required={},
             )
         ]
         self.tree.decompose(self.epic_task, subtasks)
@@ -92,7 +92,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
             "status": "success",
             "git_diff": "some diff",
             "error_chunk_summary": MagicMock(total_retries=1),
-            "retries": 1
+            "retries": 1,
         }
 
         manager = MagicMock()
@@ -117,7 +117,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
                 constraints=["Constraint A"],
                 acceptance_tests=[],
                 affected_modules=["src/module1.py"],
-                assumptions_required={}
+                assumptions_required={},
             ),
             TaskSchema(
                 task_id=sub_id2,
@@ -127,12 +127,13 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
                 constraints=["Constraint A"],
                 acceptance_tests=[],
                 affected_modules=["src/module2.py"],
-                assumptions_required={}
-            )
+                assumptions_required={},
+            ),
         ]
         self.tree.decompose(self.epic_task, subtasks)
 
         worker = MagicMock()
+
         # Mocking task execution success for S1, failure for S2
         def worker_side_effect(task, _plan, _run_adversarial=False):
             if task.task_id == sub_id1:
@@ -187,7 +188,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
             constraints=["Constraint A"],
             acceptance_tests=["Acceptance Test 1"],
             affected_modules=["src/module1.py"],
-            assumptions_required={}
+            assumptions_required={},
         )
         subtasks = self.manager.decompose_epic(single_module_epic)
         self.assertEqual(len(subtasks), 0)
@@ -201,7 +202,7 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
             "constraints": ["Constraint A"],
             "acceptance_tests": ["Test A"],
             "affected_modules": ["src/a.py", "src/b.py", "src/c.py"],
-            "assumptions_required": {}
+            "assumptions_required": {},
         }
         # Mock execute_verification_loop to run cleanly using patch context managers
         from unittest.mock import patch
@@ -209,14 +210,15 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
         import ekp_forge.manager as manager
         import ekp_forge.worker as worker
 
-        with patch.object(worker.WorkerAgent, "execute_verification_loop") as mock_evl, \
-             patch.object(manager.ManagerAgent, "triage") as mock_triage, \
-             patch.object(manager.ManagerAgent, "validate_outcome") as mock_validate:
-            
+        with (
+            patch.object(worker.WorkerAgent, "execute_verification_loop") as mock_evl,
+            patch.object(manager.ManagerAgent, "triage") as mock_triage,
+            patch.object(manager.ManagerAgent, "validate_outcome") as mock_validate,
+        ):
             mock_evl.return_value = {
                 "status": "success",
                 "git_diff": "diff",
-                "error_chunk_summary": MagicMock(total_retries=0)
+                "error_chunk_summary": MagicMock(total_retries=0),
             }
             mock_triage.return_value = ("ACCEPT", "plan")
             mock_validate.return_value = (True, "")

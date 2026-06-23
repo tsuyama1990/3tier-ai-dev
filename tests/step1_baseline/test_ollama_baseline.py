@@ -26,9 +26,7 @@ def test_ollama_service_available():
         resp = requests.get(f"{OLLAMA_URL}/api/tags", timeout=5)
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
     except requests.exceptions.ConnectionError:
-        pytest.fail(
-            "Ollama is not running. Start with: ollama serve"
-        )
+        pytest.fail("Ollama is not running. Start with: ollama serve")
 
 
 def test_ollama_baseline_communication():
@@ -60,9 +58,7 @@ def test_ollama_baseline_communication():
     assert isinstance(result, dict), f"Expected dict, got {type(result)}"
     assert "success" in result, f"Missing 'success' key: {result}"
     assert "status" in result, f"Missing 'status' key: {result}"
-    assert result.get("status") != "timeout", (
-        "Ollama communication timed out — check service and model availability"
-    )
+    assert result.get("status") != "timeout", "Ollama communication timed out — check service and model availability"
 
     print(f"\n[Step 1-B] status={result.get('status')}, success={result.get('success')}")
 
@@ -74,9 +70,7 @@ def test_fibonacci_implementation_exists():
     target_file = "tests/step1_baseline/generated/fibonacci.py"
 
     if not os.path.exists(target_file):
-        pytest.skip(
-            "Fibonacci file not generated - run test_ollama_baseline_communication first"
-        )
+        pytest.skip("Fibonacci file not generated - run test_ollama_baseline_communication first")
 
     with open(target_file, encoding="utf-8") as f:
         content = f.read()
@@ -88,6 +82,4 @@ def test_fibonacci_implementation_exists():
         pytest.fail(f"Generated file has syntax error: {e}")
 
     # Verify fibonacci function exists
-    assert "def fibonacci" in content, (
-        "Generated file must contain fibonacci function definition"
-    )
+    assert "def fibonacci" in content, "Generated file must contain fibonacci function definition"

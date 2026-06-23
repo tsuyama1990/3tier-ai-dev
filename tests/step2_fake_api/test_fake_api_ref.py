@@ -61,9 +61,7 @@ def test_fake_api_reference():
             schema_path.unlink()
 
     # Log result for debugging
-    print(
-        f"\n[Step 2 Result] status={result.get('status')}, success={result.get('success')}"
-    )
+    print(f"\n[Step 2 Result] status={result.get('status')}, success={result.get('success')}")
 
     # Verify file was generated
     assert os.path.exists(target_file), f"Generated file {target_file} should exist"
@@ -74,17 +72,14 @@ def test_fake_api_reference():
     print(f"\n[Step 2 Generated code]:\n{content}")
 
     # Step 2-B: use_magic_mode=True must be present
-    assert "use_magic_mode=True" in content, (
-        "Generated code must contain use_magic_mode=True (per fake_lib.md)"
-    )
+    assert "use_magic_mode=True" in content, "Generated code must contain use_magic_mode=True (per fake_lib.md)"
 
     # Step 2-C: offset=-99 must be present
-    assert "offset=-99" in content, (
-        "Generated code must contain offset=-99 (per fake_lib.md)"
-    )
+    assert "offset=-99" in content, "Generated code must contain offset=-99 (per fake_lib.md)"
 
     # Step 2-D: No positional args (FakeCalculator must use keyword args)
     import ast
+
     tree = ast.parse(content)
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -95,9 +90,7 @@ def test_fake_api_reference():
             elif isinstance(func, ast.Attribute):
                 func_name = func.attr
             if func_name == "FakeCalculator":
-                assert len(node.args) == 0, (
-                    "FakeCalculator must use keyword arguments only, got positional args"
-                )
+                assert len(node.args) == 0, "FakeCalculator must use keyword arguments only, got positional args"
 
 
 def test_my_app_class_exists():

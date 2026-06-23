@@ -37,21 +37,16 @@ class TestGenerateEdgeCaseTests:
         """Ollama API からエッジケーステストを生成し、適切なファイルを返すこと"""
         # Mock Ollama API response
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "message": {
-                "role": "assistant",
-                "content": "```python\ndef test_edge_case():\n    assert True\n```"
-            }
-        }).encode("utf-8")
+        mock_response.read.return_value = json.dumps(
+            {"message": {"role": "assistant", "content": "```python\ndef test_edge_case():\n    assert True\n```"}}
+        ).encode("utf-8")
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         with patch("pathlib.Path.write_text") as mock_write_text:
             file_path, content = tester.generate_edge_case_tests(
-                task=task_schema,
-                git_diff="diff --git a/src/middleware/auth.py",
-                model="ollama/qwen2.5-coder:7b"
+                task=task_schema, git_diff="diff --git a/src/middleware/auth.py", model="ollama/qwen2.5-coder:7b"
             )
-            
+
             assert "test_adversarial_generated.py" in file_path
             assert "test_edge_case" in content
             mock_write_text.assert_called_once_with(content, encoding="utf-8")
@@ -92,17 +87,13 @@ class TestGeneratePatchReport:
         worker_result = {
             "retries": 1,
             "error_chunk_summary": {
-                "entries": [
-                    {"attempt": 1, "error_type": "AssertionError", "module": "auth.py", "action_taken": "fix"}
-                ]
-            }
+                "entries": [{"attempt": 1, "error_type": "AssertionError", "module": "auth.py", "action_taken": "fix"}]
+            },
         }
         report = tester.generate_patch_report(
-            task=task_schema,
-            worker_result=worker_result,
-            adversarial_result=(True, "Passed")
+            task=task_schema, worker_result=worker_result, adversarial_result=(True, "Passed")
         )
-        
+
         assert report["task_id"] == task_schema.task_id
         assert "timestamp" in report
         assert report["verification_retries"] == 1
@@ -114,9 +105,7 @@ class TestGeneratePatchReport:
         """リトライが0または1で、アドバーサリアルテストもパスした場合は quality=high であること"""
         worker_result = {"retries": 1, "error_chunk_summary": {"entries": []}}
         report = tester.generate_patch_report(
-            task=task_schema,
-            worker_result=worker_result,
-            adversarial_result=(True, "Passed")
+            task=task_schema, worker_result=worker_result, adversarial_result=(True, "Passed")
         )
         assert report["patch_quality"] == "high"
 
@@ -124,8 +113,6 @@ class TestGeneratePatchReport:
         """リトライが最大（3）またはアドバーサリアルテストが失敗した場合は quality=low であること"""
         worker_result = {"retries": 3, "error_chunk_summary": {"entries": []}}
         report = tester.generate_patch_report(
-            task=task_schema,
-            worker_result=worker_result,
-            adversarial_result=(False, "Failed")
+            task=task_schema, worker_result=worker_result, adversarial_result=(False, "Failed")
         )
         assert report["patch_quality"] == "low"

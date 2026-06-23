@@ -45,12 +45,11 @@ def tmp_cache(tmp_path):
 
     tests_dir = mesa_dir / "verified_tests"
     tests_dir.mkdir()
-    (tests_dir / "smoke_mesa.py").write_text(
-        "import mesa\ndef test_smoke(): assert True\n"
-    )
+    (tests_dir / "smoke_mesa.py").write_text("import mesa\ndef test_smoke(): assert True\n")
 
     # Monkeypatch the module-level constant
     import dsc.deploy as deploy_mod
+
     original = deploy_mod.KNOWLEDGE_CACHE
     deploy_mod.KNOWLEDGE_CACHE = cache_root
     yield cache_root, mesa_dir
@@ -96,12 +95,14 @@ class TestAutoDetectVersion:
     def test_detects_version(self, tmp_cache):
         cache_root, _ = tmp_cache
         import dsc.deploy as deploy_mod
+
         # KNOWLEDGE_CACHE is already patched to cache_root
         ver = deploy_mod._auto_detect_version("mesa")
         assert ver == "9.9.9"
 
     def test_returns_none_for_missing_pkg(self, tmp_cache):
         import dsc.deploy as deploy_mod
+
         ver = deploy_mod._auto_detect_version("nonexistent_pkg_xyz")
         assert ver is None
 
@@ -125,9 +126,7 @@ class TestGenerateApiSchema:
     def test_append_to_existing(self, tmp_path):
         schema_path = tmp_path / "api_schema.yaml"
         # Write an existing schema with a manual addition
-        schema_path.write_text(
-            "allowed_imports:\n  - mesa\n  - mylocal\n"
-        )
+        schema_path.write_text("allowed_imports:\n  - mesa\n  - mylocal\n")
         # Deploy ase into a project that already has mesa
         updated = generate_api_schema(
             [("ase", "3.28.0")],
@@ -175,9 +174,7 @@ class TestMergeWorkflowGraphs:
     def test_two_packages_merged(self):
         c1 = "# Mesa 3.5.1 Workflow\n\n## Typical Usage\n\ncontent1"
         c2 = "# ASE 3.28.0 Workflow\n\n## Typical Usage\n\ncontent2"
-        result = merge_workflow_graphs(
-            [("mesa", "3.5.1", c1), ("ase", "3.28.0", c2)]
-        )
+        result = merge_workflow_graphs([("mesa", "3.5.1", c1), ("ase", "3.28.0", c2)])
         assert "Multi-Package Workflow Graph" in result
         assert "mesa 3.5.1" in result
         assert "ase 3.28.0" in result
@@ -287,9 +284,7 @@ class TestDeploy:
                 d = cache_root / pkg / ver
                 d.mkdir(parents=True)
                 (d / "integration_graph.md").write_text(f"# {pkg} Integration\n")
-                (d / "workflow_graph.md").write_text(
-                    f"# {pkg} {ver} Workflow\n\n## Flow\n\ncontent_{pkg}\n"
-                )
+                (d / "workflow_graph.md").write_text(f"# {pkg} {ver} Workflow\n\n## Flow\n\ncontent_{pkg}\n")
 
             project = tmp_path / "proj"
             project.mkdir()
@@ -347,4 +342,3 @@ class TestDeploy:
             assert "Mesa 3.5.1" not in ig_content
         finally:
             deploy_mod.KNOWLEDGE_CACHE = original
-

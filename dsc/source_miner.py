@@ -45,13 +45,24 @@ from dsc.config import KNOWLEDGE_CACHE
 from dsc.utils import load_manifest
 
 # Directories scored for "test" content
-_TEST_DIR_NAMES  = {"tests", "test", "testing", "pytests", "specs", "spec"}
-_EXAMPLE_DIR_NAMES = {"examples", "example", "demos", "demo", "notebooks",
-                      "tutorials", "tutorial", "samples", "sample"}
+_TEST_DIR_NAMES = {"tests", "test", "testing", "pytests", "specs", "spec"}
+_EXAMPLE_DIR_NAMES = {"examples", "example", "demos", "demo", "notebooks", "tutorials", "tutorial", "samples", "sample"}
 _SKIP_DIRS = {
-    ".git", ".github", ".gitlab", ".venv", "venv", "__pycache__",
-    "build", "dist", "node_modules", ".eggs", ".tox", ".mypy_cache",
-    ".pytest_cache", "htmlcov", ".hypothesis",
+    ".git",
+    ".github",
+    ".gitlab",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    ".eggs",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "htmlcov",
+    ".hypothesis",
 }
 
 # Minimum Trust Score to include a file in the output
@@ -59,12 +70,11 @@ TRUST_SCORE_THRESHOLD = 0.9
 
 # ── git version check ─────────────────────────────────────────────────────────
 
+
 def _git_version() -> tuple:
     """Return git version as (major, minor, patch) integers."""
     try:
-        out = subprocess.check_output(
-            ["git", "--version"], text=True, stderr=subprocess.DEVNULL
-        )
+        out = subprocess.check_output(["git", "--version"], text=True, stderr=subprocess.DEVNULL)
         # e.g. "git version 2.43.0"
         m = re.search(r"(\d+)\.(\d+)\.?(\d*)", out)
         if m:
@@ -80,14 +90,16 @@ _SPARSE_CHECKOUT_SUPPORTED = _GIT_VERSION >= (2, 25, 0)
 
 # ── Heuristic directory discovery (Challenge #2) ──────────────────────────────
 
+
 class _DirScore:
     """Scoring container for a candidate directory."""
+
     __slots__ = ("category", "path", "score")
 
     def __init__(self, path: Path, score: float, category: str):
-        self.path     = path
-        self.score    = score
-        self.category = category   # 'test' | 'example'
+        self.path = path
+        self.score = score
+        self.category = category  # 'test' | 'example'
 
 
 def _score_directory(d: Path) -> _DirScore | None:
@@ -105,7 +117,7 @@ def _score_directory(d: Path) -> _DirScore | None:
     if name in _SKIP_DIRS or name.startswith("."):
         return None
 
-    score    = 0.0
+    score = 0.0
     category = None
 
     if name in _TEST_DIR_NAMES:
@@ -130,8 +142,7 @@ def _score_directory(d: Path) -> _DirScore | None:
         if py_files:
             score += 0.5
         # Extra bonus for test-named files inside
-        if any(f.name.startswith("test_") or f.name.endswith("_test.py")
-               for f in py_files):
+        if any(f.name.startswith("test_") or f.name.endswith("_test.py") for f in py_files):
             score += 0.5
     except PermissionError:
         pass
@@ -192,9 +203,7 @@ def discover_target_dirs(repo_root: Path, max_depth: int = 4, target_name: str |
     for c in candidates:
         rel = c.path.relative_to(repo_root)
         # Skip if any parent is already collected
-        dominated = any(
-            str(rel).startswith(str(inc) + os.sep) for inc in included_paths
-        )
+        dominated = any(str(rel).startswith(str(inc) + os.sep) for inc in included_paths)
         if not dominated:
             included_paths.add(rel)
             result.append((str(rel), c.category))
@@ -202,6 +211,7 @@ def discover_target_dirs(repo_root: Path, max_depth: int = 4, target_name: str |
 
 
 # ── Fetch strategies ──────────────────────────────────────────────────────────
+
 
 def _run(cmd: list, cwd: Path | None = None, timeout: int = 300) -> subprocess.CompletedProcess:
     """Run a command, capturing output. Raises on non-zero exit."""
@@ -257,11 +267,14 @@ def _fetch_sparse(url: str, tmpdir: Path) -> bool:
 
     # Phase 1: tree-only clone (no blobs downloaded yet)
     clone_cmd = [
-        "git", "clone",
+        "git",
+        "clone",
         "--no-checkout",
-        "--depth", "1",
+        "--depth",
+        "1",
         "--filter=blob:none",
-        url, str(tmpdir),
+        url,
+        str(tmpdir),
     ]
     res = _run(clone_cmd)
     if res.returncode != 0:
@@ -277,7 +290,14 @@ def _fetch_sparse(url: str, tmpdir: Path) -> bool:
         parts = Path(d).parts
         # Evaluate the leaf directory name
         leaf = parts[-1].lower() if parts else ""
-        if leaf in _TEST_DIR_NAMES or leaf in _EXAMPLE_DIR_NAMES or "test" in leaf or "example" in leaf or "demo" in leaf or "sample" in leaf:
+        if (
+            leaf in _TEST_DIR_NAMES
+            or leaf in _EXAMPLE_DIR_NAMES
+            or "test" in leaf
+            or "example" in leaf
+            or "demo" in leaf
+            or "sample" in leaf
+        ):
             target_dirs.append(d)
 
     if not target_dirs:
@@ -334,8 +354,8 @@ def fetch_repository(url: str, tmpdir: Path) -> tuple[bool, str]:
     return False, "failed"
 
 
-
 # ── Trust Score assignment ────────────────────────────────────────────────────
+
 
 def assign_trust_score(fpath: Path, category: str) -> float:
     """
@@ -357,6 +377,7 @@ def assign_trust_score(fpath: Path, category: str) -> float:
 
 
 # ── Extraction ────────────────────────────────────────────────────────────────
+
 
 def extract_sources(repo_root: Path, target_dirs: list) -> list[dict]:
     """
@@ -380,16 +401,19 @@ def extract_sources(repo_root: Path, target_dirs: list) -> list[dict]:
                 continue
             score = assign_trust_score(py_file, category)
             if score >= TRUST_SCORE_THRESHOLD:
-                records.append({
-                    "path":        str(py_file),
-                    "rel_path":    str(py_file.relative_to(repo_root)),
-                    "category":    category,
-                    "trust_score": score,
-                })
+                records.append(
+                    {
+                        "path": str(py_file),
+                        "rel_path": str(py_file.relative_to(repo_root)),
+                        "category": category,
+                        "trust_score": score,
+                    }
+                )
     return records
 
 
 # ── Output stage: copy to knowledge cache ────────────────────────────────────
+
 
 def materialize_to_cache(records: list[dict], _repo_root: Path, cache_dir: Path) -> list[str]:
     """
@@ -413,9 +437,8 @@ def materialize_to_cache(records: list[dict], _repo_root: Path, cache_dir: Path)
 
 # ── Main orchestrator ─────────────────────────────────────────────────────────
 
-def mine(source_url: str, name: str, version: str,
-         output_dir: Path | None = None,
-         dry_run: bool = False) -> dict:
+
+def mine(source_url: str, name: str, version: str, output_dir: Path | None = None, dry_run: bool = False) -> dict:
     """
     Full source mining pipeline for one package.
 
@@ -429,16 +452,16 @@ def mine(source_url: str, name: str, version: str,
     cache_dir = output_dir or (KNOWLEDGE_CACHE / name.lower() / version)
 
     report = {
-        "name":         name,
-        "version":      version,
-        "source_url":   source_url,
-        "cache_dir":    str(cache_dir),
-        "git_version":  ".".join(str(x) for x in _GIT_VERSION),
+        "name": name,
+        "version": version,
+        "source_url": source_url,
+        "cache_dir": str(cache_dir),
+        "git_version": ".".join(str(x) for x in _GIT_VERSION),
         "sparse_checkout_supported": _SPARSE_CHECKOUT_SUPPORTED,
         "fetch_strategy": None,
         "discovered_dirs": [],
         "extracted_files": [],
-        "written_assets":  [],
+        "written_assets": [],
         "success": False,
         "error": None,
     }
@@ -459,12 +482,9 @@ def mine(source_url: str, name: str, version: str,
 
         # Step 2: Discover directories
         target_dirs = discover_target_dirs(tmpdir, target_name=name)
-        report["discovered_dirs"] = [
-            {"rel_path": rd, "category": cat} for rd, cat in target_dirs
-        ]
+        report["discovered_dirs"] = [{"rel_path": rd, "category": cat} for rd, cat in target_dirs]
         print(
-            f"[Miner] Discovered {len(target_dirs)} target directories: "
-            + ", ".join(rd for rd, _ in target_dirs),
+            f"[Miner] Discovered {len(target_dirs)} target directories: " + ", ".join(rd for rd, _ in target_dirs),
             file=sys.stderr,
         )
 
@@ -479,8 +499,7 @@ def mine(source_url: str, name: str, version: str,
             for r in records
         ]
         print(
-            f"[Miner] Extracted {len(records)} files "
-            f"(trust_score >= {TRUST_SCORE_THRESHOLD})",
+            f"[Miner] Extracted {len(records)} files (trust_score >= {TRUST_SCORE_THRESHOLD})",
             file=sys.stderr,
         )
 
@@ -502,6 +521,7 @@ def mine(source_url: str, name: str, version: str,
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -538,7 +558,7 @@ Examples:
         metavar="URL",
         help="Git clone URL of the source repository",
     )
-    p.add_argument("--name",    metavar="NAME",    help="Package name (required with --url)")
+    p.add_argument("--name", metavar="NAME", help="Package name (required with --url)")
     p.add_argument("--version", metavar="VERSION", help="Package version (required with --url)")
     p.add_argument(
         "--output",
@@ -563,15 +583,15 @@ def main(argv: list[str] | None = None) -> None:
     if args.manifest:
         mf = load_manifest(args.manifest)
         pkg = mf["packages"][0]
-        url     = pkg.get("github_url") or pkg.get("source_url")
-        name    = pkg["name"]
+        url = pkg.get("github_url") or pkg.get("source_url")
+        name = pkg["name"]
         version = pkg["version"]
         if not url:
             print(f"ERROR: no source URL found in manifest for {name}", file=sys.stderr)
             sys.exit(1)
     else:
-        url     = args.url
-        name    = args.name
+        url = args.url
+        name = args.name
         version = args.version
         if not (name and version):
             print("ERROR: --name and --version are required with --url", file=sys.stderr)
@@ -579,8 +599,11 @@ def main(argv: list[str] | None = None) -> None:
 
     output_dir = Path(args.output).expanduser().resolve() if args.output else None
 
-    print(f"[Miner] git {'.'.join(str(x) for x in _GIT_VERSION)} "
-          f"| sparse-checkout supported: {_SPARSE_CHECKOUT_SUPPORTED}", file=sys.stderr)
+    print(
+        f"[Miner] git {'.'.join(str(x) for x in _GIT_VERSION)} "
+        f"| sparse-checkout supported: {_SPARSE_CHECKOUT_SUPPORTED}",
+        file=sys.stderr,
+    )
 
     report = mine(
         source_url=url,

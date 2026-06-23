@@ -30,11 +30,7 @@ class TestOrchestratorAPI(unittest.TestCase):
         mock_result.stdout = "All tests passed"
         mock_run.return_value = mock_result
 
-        result = run_3tier_dev(
-            prompt="Implement dummy feature",
-            target_pkg="ase",
-            target_files=["src/dummy.py"]
-        )
+        result = run_3tier_dev(prompt="Implement dummy feature", target_pkg="ase", target_files=["src/dummy.py"])
 
         self.assertIsInstance(result, dict)
         self.assertTrue(result.get("success"))
@@ -49,10 +45,7 @@ class TestOrchestratorAPI(unittest.TestCase):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="aider", timeout=600)
 
         result = run_3tier_dev(
-            prompt="Infinite loop prompt",
-            target_pkg="ase",
-            target_files=["src/dummy.py"],
-            timeout=600
+            prompt="Infinite loop prompt", target_pkg="ase", target_files=["src/dummy.py"], timeout=600
         )
 
         self.assertIsInstance(result, dict)
@@ -63,11 +56,7 @@ class TestOrchestratorAPI(unittest.TestCase):
         """別プロセス実行中（.ekp.lock存在時）は弾かれ、status: locked が返ること"""
         self.lock_file.write_text("locked by test")
 
-        result = run_3tier_dev(
-            prompt="Concurrent prompt",
-            target_pkg="ase",
-            target_files=["src/dummy.py"]
-        )
+        result = run_3tier_dev(prompt="Concurrent prompt", target_pkg="ase", target_files=["src/dummy.py"])
 
         self.assertIsInstance(result, dict)
         self.assertFalse(result.get("success"))
@@ -78,8 +67,10 @@ class TestOrchestratorAPI(unittest.TestCase):
         """標準入力に一切依存しないこと（対話モードの排除）"""
         mock_stdin_read.side_effect = RuntimeError("sys.stdin.read() MUST NOT BE CALLED in API mode")
 
-        with patch("subprocess.run") as mock_run, \
-             patch("ekp_forge.sandbox.integrator.integrate_changes") as mock_integrate:
+        with (
+            patch("subprocess.run") as mock_run,
+            patch("ekp_forge.sandbox.integrator.integrate_changes") as mock_integrate,
+        ):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_run.return_value = mock_result
@@ -92,7 +83,9 @@ class TestOrchestratorAPI(unittest.TestCase):
     def test_fails_fast_if_knowledge_missing(self, mock_exists):
         """知識(Knowledge)が存在しない場合、Aiderを起動せずに即時エラーを返すこと"""
         # mock exists() to return True for pyproject.toml, ruff, mypy to prevent setup_ruff_mypy overwriting/installing
-        mock_exists.side_effect = lambda self, *args, **kwargs: any(p in str(self) for p in ["pyproject.toml", "ruff", "mypy"])
+        mock_exists.side_effect = lambda self, *args, **kwargs: any(
+            p in str(self) for p in ["pyproject.toml", "ruff", "mypy"]
+        )
 
         result = run_3tier_dev("prompt", "unknown_pkg", ["dummy.py"])
 
@@ -117,11 +110,9 @@ class TestOrchestratorAPI(unittest.TestCase):
         # subprocess.run の呼び出し履歴を取得
         calls = mock_run.call_args_list
         # git reset --hard HEAD と git clean -fd が呼ばれているか確認
-        git_reset_called = any(
-            "reset" in str(call[0][0]) and "--hard" in str(call[0][0])
-            for call in calls
-        )
+        git_reset_called = any("reset" in str(call[0][0]) and "--hard" in str(call[0][0]) for call in calls)
         self.assertTrue(git_reset_called, "git reset --hard MUST be called on failure")
+
 
 if __name__ == "__main__":
     unittest.main()

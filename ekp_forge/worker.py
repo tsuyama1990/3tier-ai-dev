@@ -158,6 +158,7 @@ class WorkerAgent:
                             continue
 
                         from ekp_forge.sandbox.scoped_lint import _changed_files
+
                         changed_file_paths = _changed_files()
                         changed_files = [str(f) for f in changed_file_paths] if changed_file_paths else None
 
@@ -172,7 +173,10 @@ class WorkerAgent:
                                     action_taken=f"Ruff check failed: {ruff_output[:200]}",
                                 )
                             )
-                            print(f"\n--- ATTEMPT {attempt} RUFF LINT FAILURE ---\n{ruff_output}\n----------------------------------\n", file=sys.stderr)  # noqa: T201
+                            print(
+                                f"\n--- ATTEMPT {attempt} RUFF LINT FAILURE ---\n{ruff_output}\n----------------------------------\n",
+                                file=sys.stderr,
+                            )  # noqa: T201
 
                         # --- Step 4: Mypy type execution ---
                         mypy_ok, mypy_output = run_mypy(changed_files)
@@ -185,7 +189,10 @@ class WorkerAgent:
                                     action_taken=f"Mypy check failed: {mypy_output[:200]}",
                                 )
                             )
-                            print(f"\n--- ATTEMPT {attempt} MYPY TYPE FAILURE ---\n{mypy_output}\n----------------------------------\n", file=sys.stderr)  # noqa: T201
+                            print(
+                                f"\n--- ATTEMPT {attempt} MYPY TYPE FAILURE ---\n{mypy_output}\n----------------------------------\n",
+                                file=sys.stderr,
+                            )  # noqa: T201
 
                         # --- Step 5: pytest execution ---
                         pytest_ok, pytest_output = self._run_pytest()
@@ -198,7 +205,10 @@ class WorkerAgent:
                                     action_taken="Pytest check failed, attempting repair",
                                 )
                             )
-                            print(f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n", file=sys.stderr)  # noqa: T201
+                            print(
+                                f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n",
+                                file=sys.stderr,
+                            )  # noqa: T201
 
                         # Aggregate results
                         all_ok = import_ok and ruff_ok and mypy_ok and pytest_ok
@@ -221,6 +231,7 @@ class WorkerAgent:
                                 test_file = None
                                 try:
                                     from ekp_forge.adversarial_tester import AdversarialTester
+
                                     tester = AdversarialTester()
                                     test_file, _ = tester.generate_edge_case_tests(task, git_diff, model=self.model)
                                     adv_ok, adv_output = tester.run_adversarial_tests(test_file)
@@ -244,16 +255,24 @@ class WorkerAgent:
                         if not import_ok:
                             error_log_parts.append(f"--- Import Validation Failures ---\n{import_err}")
                         if not ruff_ok:
-                            error_log_parts.append(f"--- Ruff Lint Failures ---\n{self._compress_error_log(ruff_output)}")
+                            error_log_parts.append(
+                                f"--- Ruff Lint Failures ---\n{self._compress_error_log(ruff_output)}"
+                            )
                         if not mypy_ok:
-                            error_log_parts.append(f"--- Mypy Type Failures ---\n{self._compress_error_log(mypy_output)}")
+                            error_log_parts.append(
+                                f"--- Mypy Type Failures ---\n{self._compress_error_log(mypy_output)}"
+                            )
                         if not pytest_ok:
-                            error_log_parts.append(f"--- Pytest Failures ---\n{self._compress_error_log(pytest_output)}")
+                            error_log_parts.append(
+                                f"--- Pytest Failures ---\n{self._compress_error_log(pytest_output)}"
+                            )
 
                         combined_error_log = "\n\n".join(error_log_parts)
 
                         # Escalation Policy checks
-                        esc_result = self._check_escalation_policy(attempt, error_chunk, combined_error_log, prev_error_hash, task)
+                        esc_result = self._check_escalation_policy(
+                            attempt, error_chunk, combined_error_log, prev_error_hash, task
+                        )
                         if esc_result is not None:
                             # Escalation triggered
                             git_diff = self._get_git_diff()

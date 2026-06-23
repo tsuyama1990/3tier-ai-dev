@@ -342,7 +342,7 @@ class TestCompressErrorLog:
             "verbose setup output line 1",
             "verbose setup output line 2",
             "Traceback (most recent call last):",
-            "  File \"test.py\", line 10, in test_foo",
+            '  File "test.py", line 10, in test_foo',
             "    assert 1 == 2",
             "AssertionError: assert 1 == 2",
             "verbose teardown output line 1",
@@ -354,4 +354,3 @@ class TestCompressErrorLog:
         assert "Traceback" in compressed
         assert "AssertionError" in compressed
         assert "verbose setup output line 1" not in compressed
-

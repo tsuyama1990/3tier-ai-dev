@@ -67,10 +67,7 @@ class TaskTree:
             # Step 1: Triage
             triage_status, triage_result = manager.triage(node.task)
             if triage_status == "REJECT":
-                res = {
-                    "status": "rejected",
-                    "rejection_reason": triage_result
-                }
+                res = {"status": "rejected", "rejection_reason": triage_result}
                 with self._lock:
                     node.status = "rejected"
                     node.result = res
@@ -84,9 +81,7 @@ class TaskTree:
             # Step 3: Validation if worker was successful
             if worker_result.get("status") == "success":
                 validation_ok, feedback = manager.validate_outcome(
-                    node.task,
-                    worker_result.get("git_diff", ""),
-                    worker_result["error_chunk_summary"]
+                    node.task, worker_result.get("git_diff", ""), worker_result["error_chunk_summary"]
                 )
                 if validation_ok:
                     status = "success"
@@ -111,10 +106,7 @@ class TaskTree:
                     tid, res = future.result()
                     results[tid] = res
                 except Exception as e:
-                    err_res = {
-                        "status": "failed",
-                        "error": str(e)
-                    }
+                    err_res = {"status": "failed", "error": str(e)}
                     results[node.task.task_id] = err_res
                     with self._lock:
                         node.status = "failed"
@@ -162,15 +154,12 @@ class TaskTree:
                         elif isinstance(ecs, dict) and "total_retries" in ecs:
                             retries = ecs["total_retries"]
 
-                task_results[tid] = {
-                    "status": node.status,
-                    "retries": retries
-                }
+                task_results[tid] = {"status": node.status, "retries": retries}
 
         return {
             "total": total,
             "success": success,
             "failed": failed,
             "escalated": escalated,
-            "task_results": task_results
+            "task_results": task_results,
         }

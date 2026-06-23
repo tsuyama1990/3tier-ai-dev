@@ -1,4 +1,5 @@
 """IntegratorAgent – copies changed files from sandbox repo to project root."""
+
 from __future__ import annotations
 
 import shutil

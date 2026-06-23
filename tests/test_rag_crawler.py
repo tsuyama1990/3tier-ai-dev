@@ -9,7 +9,6 @@ from ekp_forge.rag_crawler import AssumptionRAGCrawler
 
 
 class TestAssumptionRAGCrawler(unittest.TestCase):
-
     def setUp(self) -> None:
         self.temp_dir = Path(tempfile.mkdtemp())
         self.crawler = AssumptionRAGCrawler(decisions_dir=self.temp_dir)
@@ -35,7 +34,7 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
             "```\n"
             "## 3. Decision\n"
             "We decided to use magic.",
-            encoding="utf-8"
+            encoding="utf-8",
         )
 
         self.crawler.build_index()
@@ -55,7 +54,7 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
                 f"## 1. Context\nSearchable query words here document_{i}\n"
                 "## 2. Assumptions\n```json\n{}\n```\n"
                 f"## 3. Decision\nWe decided to do task_{i}",
-                encoding="utf-8"
+                encoding="utf-8",
             )
 
         self.crawler.build_index()
@@ -70,7 +69,7 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
             "## 1. Context\nTermA TermB\n"
             "## 2. Assumptions\n```json\n{}\n```\n"
             "## 3. Decision\nDecision content",
-            encoding="utf-8"
+            encoding="utf-8",
         )
         self.crawler.build_index()
         results = self.crawler.search("TermA", top_k=1)
@@ -89,7 +88,7 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
             '{"version": 1.0}\n'
             "```\n"
             "## 3. Decision\nDecision",
-            encoding="utf-8"
+            encoding="utf-8",
         )
         self.crawler.build_index()
         # Identical value -> no conflict
@@ -110,7 +109,7 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
             '{"version": 1.0}\n'
             "```\n"
             "## 3. Decision\nDecision",
-            encoding="utf-8"
+            encoding="utf-8",
         )
         self.crawler.build_index()
         conflicts = self.crawler.check_assumption_conflicts({"version": 2.0})
@@ -128,7 +127,7 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
             "## 1. Context\nquick brown fox\n"
             "## 2. Assumptions\n```json\n{}\n```\n"
             "## 3. Decision\njumped over lazy dog",
-            encoding="utf-8"
+            encoding="utf-8",
         )
         self.crawler.build_index()
         results = self.crawler.search("quick brown fox jumped over lazy dog", top_k=1)
@@ -143,7 +142,7 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
             "## 1. Context\napple banana orange\n"
             "## 2. Assumptions\n```json\n{}\n```\n"
             "## 3. Decision\ncherry date",
-            encoding="utf-8"
+            encoding="utf-8",
         )
         self.crawler.build_index()
         results = self.crawler.search("elephant giraffe zebra", top_k=1)
@@ -158,10 +157,10 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
             "## 1. Context\nUse python module authentication.py.\n"
             "## 2. Assumptions\n```json\n{}\n```\n"
             "## 3. Decision\nFixes MypyTypeError.",
-            encoding="utf-8"
+            encoding="utf-8",
         )
         self.crawler.build_index()
-        
+
         # 1. Base search
         base_results = self.crawler.search("authentication", top_k=1)
         base_score = base_results[0]["score"]
@@ -176,10 +175,11 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
         self.assertAlmostEqual(boosted_mod[0]["score"], base_score * 1.5, places=4)
 
         # 4. Double boosted
-        boosted_both = self.crawler.search("authentication", error_type="MypyTypeError", module_name="authentication.py", top_k=1)
+        boosted_both = self.crawler.search(
+            "authentication", error_type="MypyTypeError", module_name="authentication.py", top_k=1
+        )
         self.assertAlmostEqual(boosted_both[0]["score"], base_score * 3.0, places=4)
 
 
 if __name__ == "__main__":
     unittest.main()
-

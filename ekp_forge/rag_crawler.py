@@ -48,21 +48,20 @@ class AssumptionRAGCrawler:
             context = self._extract_context(content)
 
             # Full text for TF-IDF (combine decision + context + assumption keys/values)
-            full_text = " ".join([
-                decision,
-                context,
-                " ".join(assumptions.keys()),
-                " ".join(str(v) for v in assumptions.values())
-            ])
+            full_text = " ".join(
+                [decision, context, " ".join(assumptions.keys()), " ".join(str(v) for v in assumptions.values())]
+            )
             tokens = self._tokenize(full_text)
 
-            self._index.append({
-                "file": adr_file.name,
-                "assumptions": assumptions,
-                "decision": decision,
-                "context": context,
-                "tokens": tokens,
-            })
+            self._index.append(
+                {
+                    "file": adr_file.name,
+                    "assumptions": assumptions,
+                    "decision": decision,
+                    "context": context,
+                    "tokens": tokens,
+                }
+            )
 
         # Calculate IDF
         all_tokens = set()
@@ -112,7 +111,9 @@ class AssumptionRAGCrawler:
                     doc_vector[term] = (count / len(doc_tokens)) * self._idf.get(term, 0.0)
 
                 # Cosine similarity
-                dot_product = sum(query_vector.get(t, 0.0) * doc_vector.get(t, 0.0) for t in set(query_vector) | set(doc_vector))
+                dot_product = sum(
+                    query_vector.get(t, 0.0) * doc_vector.get(t, 0.0) for t in set(query_vector) | set(doc_vector)
+                )
                 query_norm = math.sqrt(sum(v**2 for v in query_vector.values()))
                 doc_norm = math.sqrt(sum(v**2 for v in doc_vector.values()))
                 score = dot_product / (query_norm * doc_norm) if query_norm > 0 and doc_norm > 0 else 0.0
@@ -130,12 +131,14 @@ class AssumptionRAGCrawler:
 
             score *= boost
 
-            results.append({
-                "file": doc["file"],
-                "score": score,
-                "assumptions": doc["assumptions"],
-                "decision": doc["decision"],
-            })
+            results.append(
+                {
+                    "file": doc["file"],
+                    "score": score,
+                    "assumptions": doc["assumptions"],
+                    "decision": doc["decision"],
+                }
+            )
 
         # Sort by score desc, then by filename asc (alphabetical deterministic sorting)
         results.sort(key=lambda x: (-x["score"], x["file"]))
@@ -151,12 +154,14 @@ class AssumptionRAGCrawler:
         for doc in self._index:
             for key, val in new_assumptions.items():
                 if key in doc["assumptions"] and doc["assumptions"][key] != val:
-                    conflicts.append({
-                        "adr_file": doc["file"],
-                        "key": key,
-                        "adr_value": doc["assumptions"][key],
-                        "new_value": val,
-                    })
+                    conflicts.append(
+                        {
+                            "adr_file": doc["file"],
+                            "key": key,
+                            "adr_value": doc["assumptions"][key],
+                            "new_value": val,
+                        }
+                    )
         return conflicts
 
     # -------------------------------------------------------------------

@@ -20,19 +20,19 @@ from ekp_forge.orchestrator_api import run_3tier_dev
 def test_self_healing_triggers_on_banned_import():
     """
     Step 3-A: AST gatekeeper detects banned import, triggers repair loop.
-    
+
     Setup:
     - api_schema.yaml: allowed_imports = [builtins] のみ（os を除外）
     - prompt: "os を使って get_current_dir() を実装せよ"
     - skip_self_healing=False（修復ループを有効化）
-    
+
     Expected:
     - Ollama が os を使ったコードを生成
     - validate_imports() が "Unauthorized import of 'os'" を返す
     - 修復ループが発動（retries 1/3, 2/3, 3/3）
     - status: "failed" OR status: "success"（Ollamaが os 不使用の実装に切り替えた場合）
     - status: "timeout" でないこと（ループが詰まらないこと）
-    
+
     PASS条件:
     - result["status"] in ("failed", "success", "error") かつ != "timeout"
     - orchestrator.log に "Retrying correction" が含まれること（ログファイルから確認）
@@ -63,18 +63,16 @@ def test_self_healing_triggers_on_banned_import():
             prompt=prompt,
             target_pkg="fake_lib",
             target_files=[target_file],
-            timeout=300,             # 修復1回あたり300s（合計900s上限）
+            timeout=300,  # 修復1回あたり300s（合計900s上限）
             model="ollama/qwen2.5-coder:7b",
-            skip_self_healing=False, # ← 修復ループON
+            skip_self_healing=False,  # ← 修復ループON
         )
 
         # Step 3-A: タイムアウトしていないこと
-        assert result.get("status") != "timeout", \
-            "Self-healing loop must not timeout — Ollama hung"
+        assert result.get("status") != "timeout", "Self-healing loop must not timeout — Ollama hung"
 
         # Step 3-B: status が有効な値であること
-        assert result.get("status") in ("failed", "success", "error"), \
-            f"Unexpected status: {result.get('status')}"
+        assert result.get("status") in ("failed", "success", "error"), f"Unexpected status: {result.get('status')}"
 
         # orchestrator.log の内容確認（修復ループが実際に走ったかの証拠）
         log_file = Path("orchestrator.log")
@@ -95,5 +93,6 @@ def test_git_rollback_executed_on_failure():
     Step 3-B: 修復ループ上限到達時に git reset --hard が実行されること。
     """
     target_file = Path("tests/step3_stress/generated/get_current_dir.py")
-    assert not target_file.exists() or "import os" not in target_file.read_text(), \
+    assert not target_file.exists() or "import os" not in target_file.read_text(), (
         "Target file still has banned import 'os' after self-healing loop finished!"
+    )

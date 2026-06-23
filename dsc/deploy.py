@@ -123,9 +123,7 @@ def _copy_file(src: Path, dst: Path, dry_run: bool, force: bool) -> str | None:
     return "copied"
 
 
-def _copy_tree(
-    src_dir: Path, dst_dir: Path, dry_run: bool, force: bool, glob: str = "**/*.py"
-) -> list[str]:
+def _copy_tree(src_dir: Path, dst_dir: Path, dry_run: bool, force: bool, glob: str = "**/*.py") -> list[str]:
     """
     Copy all files matching `glob` under src_dir into dst_dir,
     preserving the relative sub-directory structure.
@@ -265,9 +263,7 @@ def _extract_sections(content: str) -> dict[str, str]:
     return sections
 
 
-def merge_workflow_graphs(
-    contents: list[tuple[str, str, str]]
-) -> str:
+def merge_workflow_graphs(contents: list[tuple[str, str, str]]) -> str:
     """
     Merge multiple workflow_graph.md files into one.
 
@@ -431,11 +427,7 @@ def deploy(
             result["workflow_graph_written"] = True
 
     # ── 6. api_schema.yaml ────────────────────────────────────────────────
-    deployed_packages = [
-        (r["name"], r["version"])
-        for r in result["packages"]
-        if r.get("error") is None
-    ]
+    deployed_packages = [(r["name"], r["version"]) for r in result["packages"] if r.get("error") is None]
 
     if deployed_packages:
         schema_content = generate_api_schema(
@@ -482,9 +474,7 @@ def _parse_package_spec(spec: str) -> tuple[str, str]:
             version = parts[1].strip()
             if name and version:
                 return name, version
-    raise ValueError(
-        f"Invalid package spec '{spec}'. Expected 'name=version' (e.g. mesa=3.5.1)."
-    )
+    raise ValueError(f"Invalid package spec '{spec}'. Expected 'name=version' (e.g. mesa=3.5.1).")
 
 
 def _auto_detect_version(pkg_name: str) -> str | None:
@@ -611,18 +601,14 @@ def main(argv: list[str] | None = None) -> None:
                 ver = _auto_detect_version(spec)
                 if ver is None:
                     print(
-                        f"ERROR: No cached version found for '{spec}'. "
-                        f"Specify version explicitly (e.g. {spec}=1.0.0).",
+                        f"ERROR: No cached version found for '{spec}'. Specify version explicitly (e.g. {spec}=1.0.0).",
                         file=sys.stderr,
                     )
                     sys.exit(1)
                 _log(f"Auto-detected version for {spec}: {ver}")
                 packages.append((spec, ver))
 
-    _log(
-        f"Deploying {len(packages)} package(s) into {project}"
-        + (" [DRY-RUN]" if args.dry_run else "")
-    )
+    _log(f"Deploying {len(packages)} package(s) into {project}" + (" [DRY-RUN]" if args.dry_run else ""))
 
     result = deploy(
         project=project,

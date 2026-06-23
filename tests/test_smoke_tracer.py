@@ -32,13 +32,9 @@ class TestExtractSnippetMonolithicNodeFix(unittest.TestCase):
 
         # Should have non-import content (the function body)
         non_import = [
-            line
-            for line in snippet.splitlines()
-            if line.strip() and not line.lstrip().startswith(("import", "from"))
+            line for line in snippet.splitlines() if line.strip() and not line.lstrip().startswith(("import", "from"))
         ]
-        self.assertTrue(
-            non_import, f"Should have non-import content, got: {snippet[:100]!r}"
-        )
+        self.assertTrue(non_import, f"Should have non-import content, got: {snippet[:100]!r}")
 
     def test_normal_file(self):
         """A normal file with short statements should work as before."""
@@ -59,9 +55,7 @@ class TestExtractSnippetMonolithicNodeFix(unittest.TestCase):
     def test_import_only_fallback(self):
         """A file with only imports and no other content should fall back to raw head."""
         # This is a pathological case: only imports, nothing else
-        src = (
-            "from ase import Atoms\nfrom ase.io import read\nfrom ase.io import write\n"
-        )
+        src = "from ase import Atoms\nfrom ase.io import read\nfrom ase.io import write\n"
         snippet = extract_snippet(src, "ase", max_lines=80)
 
         # Should fall back to raw head (all lines)
@@ -79,13 +73,9 @@ class TestExtractSnippetMonolithicNodeFix(unittest.TestCase):
 
         # Should have non-import content (the class body)
         non_import = [
-            line
-            for line in snippet.splitlines()
-            if line.strip() and not line.lstrip().startswith(("import", "from"))
+            line for line in snippet.splitlines() if line.strip() and not line.lstrip().startswith(("import", "from"))
         ]
-        self.assertTrue(
-            non_import, f"Should have non-import content, got: {snippet[:100]!r}"
-        )
+        self.assertTrue(non_import, f"Should have non-import content, got: {snippet[:100]!r}")
 
     def test_mixed_imports_and_code(self):
         """A file with imports and code within budget should work correctly."""

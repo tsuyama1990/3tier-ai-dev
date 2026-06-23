@@ -130,9 +130,7 @@ def test_dsc_pipeline_e2e(tmp_path, monkeypatch):
     dist_info.mkdir()
 
     (dist_info / "METADATA").write_text(
-        "Metadata-Version: 2.1\n"
-        "Name: dummypkg\n"
-        "Version: 1.0.0\n",
+        "Metadata-Version: 2.1\nName: dummypkg\nVersion: 1.0.0\n",
         encoding="utf-8",
     )
 
@@ -185,15 +183,11 @@ def test_dsc_pipeline_e2e(tmp_path, monkeypatch):
     assert (cache_pkg_dir / "smoke_trace_report.json").exists()
 
     # Stage 4: asset_synthesizer (offline mode)
-    run_main_safely(
-        asset_synthesizer.main, ["--manifest", str(manifest_path), "--no-llm"]
-    )
+    run_main_safely(asset_synthesizer.main, ["--manifest", str(manifest_path), "--no-llm"])
     assert (cache_pkg_dir / "integration_graph.md").exists()
 
     # Stage 5: deploy
-    run_main_safely(
-        deploy.main, ["--project", str(temp_project), "--packages", "dummypkg=1.0.0"]
-    )
+    run_main_safely(deploy.main, ["--project", str(temp_project), "--packages", "dummypkg=1.0.0"])
 
     # 6. Verify outputs and assert final deployment state
     assert (temp_project / ".ai-knowledge" / "dummypkg.md").exists()

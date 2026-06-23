@@ -100,6 +100,7 @@ class TestTriageReject:
     def test_triage_reject_invalid_schema(self) -> None:
         """Pydantic バリデーション失敗でエラーが発生すること"""
         from pydantic import ValidationError
+
         with pytest.raises(ValidationError):
             TaskSchema(
                 task_id="bad-id",
@@ -377,4 +378,3 @@ class TestChallengeAndArchitectChecks:
         status, reason = manager.triage(valid_task)
         assert status == "REJECT"
         assert "Architect" in reason
-

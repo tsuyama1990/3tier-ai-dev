@@ -4,6 +4,7 @@ Step 4: Asset Synthesizer Ollama Native Test
 Purpose: Verify _call_ollama() is implemented and synthesize() works
 with llm_provider="ollama", generating semantically rich integration_graph.md.
 """
+
 import shutil
 import sys
 import tempfile
@@ -36,7 +37,7 @@ def test_ollama_service_available():
 def test_call_ollama_returns_string():
     """
     Step 4-B: _call_ollama() が文字列を返すこと。
-    
+
     最小限のプロンプトで Ollama を呼び出し、非空文字列が返ることを検証。
     """
     result = _call_ollama(
@@ -55,7 +56,7 @@ def test_synthesize_with_ollama_provider():
     """
     Step 4-C: synthesize() が llm_provider="ollama" で動作し、
     意味論的な integration_graph.md を生成できること。
-    
+
     PASS条件:
     - integration_graph.md が生成されること
     - ファイルサイズが 100 bytes 以上（実質的な内容がある）
@@ -78,19 +79,18 @@ def test_synthesize_with_ollama_provider():
         )
 
         # ファイル生成確認
-        assert result["integration_graph_written"], \
-            "integration_graph.md must be written"
+        assert result["integration_graph_written"], "integration_graph.md must be written"
 
         ig_path = cache_dir / "integration_graph.md"
         assert ig_path.exists(), "integration_graph.md file must exist"
 
         content = ig_path.read_text()
-        assert len(content) > 100, \
-            f"integration_graph.md must have substantial content, got {len(content)} bytes"
+        assert len(content) > 100, f"integration_graph.md must have substantial content, got {len(content)} bytes"
 
         # Markdown の基本構造確認
-        assert any(kw in content for kw in ["ase", "Integration Graph", "API", "#"]), \
+        assert any(kw in content for kw in ["ase", "Integration Graph", "API", "#"]), (
             "integration_graph.md must contain meaningful content"
+        )
 
         print(f"\n[Step 4-C] Generated {len(content)} bytes")
         print(f"[Step 4-C] First 300 chars:\n{content[:300]}")
@@ -121,12 +121,10 @@ def test_ollama_fallback_on_error():
         )
 
         # フォールバックで template モードで生成されること
-        assert result["integration_graph_written"], \
-            "Should fall back to template mode and write the file"
+        assert result["integration_graph_written"], "Should fall back to template mode and write the file"
 
         ig_content = (cache_dir / "integration_graph.md").read_text()
-        assert "Integration Graph" in ig_content, \
-            "Fallback template should contain 'Integration Graph'"
+        assert "Integration Graph" in ig_content, "Fallback template should contain 'Integration Graph'"
 
         print("\n[Step 4-D] Fallback to template mode: PASS")
 
@@ -141,14 +139,21 @@ def test_cli_ollama_provider():
     """
     from dsc.asset_synthesizer import build_parser
 
-    args = build_parser().parse_args([
-        "--cache-dir", "/tmp/test",
-        "--target", "ase",
-        "--version", "3.28.0",
-        "--llm",
-        "--llm-provider", "ollama",
-        "--ollama-url", "http://localhost:11434",
-    ])
+    args = build_parser().parse_args(
+        [
+            "--cache-dir",
+            "/tmp/test",
+            "--target",
+            "ase",
+            "--version",
+            "3.28.0",
+            "--llm",
+            "--llm-provider",
+            "ollama",
+            "--ollama-url",
+            "http://localhost:11434",
+        ]
+    )
 
     assert args.llm_provider == "ollama"
     assert args.ollama_url == "http://localhost:11434"

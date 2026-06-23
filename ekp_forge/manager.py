@@ -46,7 +46,16 @@ class ManagerAgent:
 
         # Challenge Agent check (Over-engineering detection)
         if not (task.bypass_challenge_agent or task.force_accept):
-            overengineered_keywords = ["redis", "postgresql", "postgres", "mysql", "mongodb", "mongo", "kafka", "rabbitmq"]
+            overengineered_keywords = [
+                "redis",
+                "postgresql",
+                "postgres",
+                "mysql",
+                "mongodb",
+                "mongo",
+                "kafka",
+                "rabbitmq",
+            ]
             combined_text = (task.goal + " " + " ".join(task.constraints)).lower()
             for kw in overengineered_keywords:
                 if re.search(r"\b" + kw + r"\b", combined_text):
@@ -54,16 +63,18 @@ class ManagerAgent:
                         "REJECT",
                         f"Challenge Agent: The task goal/constraints mention complex external service/dependency '{kw}' "
                         f"which suggests over-engineering. Please use standard library or standard local components "
-                        f"(e.g., sqlite3, json, math, urllib) instead."
+                        f"(e.g., sqlite3, json, math, urllib) instead.",
                     )
 
         # Architect check (Module boundary constraints)
         for mod in task.affected_modules:
             p = Path(mod)
-            if p.name in {"pyproject.toml", "mcp_config.json", "README.md"} or any(part in {".venv", "__pycache__", ".git", "tests/generated"} for part in p.parts):
+            if p.name in {"pyproject.toml", "mcp_config.json", "README.md"} or any(
+                part in {".venv", "__pycache__", ".git", "tests/generated"} for part in p.parts
+            ):
                 return (
                     "REJECT",
-                    f"Architect: Modifying '{mod}' violates architectural boundaries (restricted file or directory)."
+                    f"Architect: Modifying '{mod}' violates architectural boundaries (restricted file or directory).",
                 )
 
         # Step 2: Assumption Check
@@ -101,14 +112,12 @@ class ManagerAgent:
 
         # 2b: Check decisions/ ADRs for conflicting assumptions (RAG Crawler)
         from ekp_forge.rag_crawler import AssumptionRAGCrawler
+
         crawler = AssumptionRAGCrawler(self._decisions_dir)
         crawler.build_index()
         conflicts = crawler.check_assumption_conflicts(task.assumptions_required)
         if conflicts:
-            msgs = [
-                f"{c['key']}: ADR expects {c['adr_value']!r}, task has {c['new_value']!r}"
-                for c in conflicts
-            ]
+            msgs = [f"{c['key']}: ADR expects {c['adr_value']!r}, task has {c['new_value']!r}" for c in conflicts]
             return f"Assumption violated (RAG): {'; '.join(msgs)}"
 
         return None
@@ -152,6 +161,7 @@ class ManagerAgent:
 
         # Attach relevant ADR summaries (using RAG search)
         from ekp_forge.rag_crawler import AssumptionRAGCrawler
+
         crawler = AssumptionRAGCrawler(self._decisions_dir)
         crawler.build_index()
 

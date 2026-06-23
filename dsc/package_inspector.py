@@ -33,6 +33,7 @@ from dsc.config import KNOWLEDGE_CACHE
 
 # ── Site-packages discovery ────────────────────────────────────────────────────
 
+
 def find_site_packages(venv: Path) -> Path | None:
     """
     Locate site-packages under .venv, agnostic of Python minor version.
@@ -52,6 +53,7 @@ def find_site_packages(venv: Path) -> Path | None:
 
 
 # ── .dist-info discovery ───────────────────────────────────────────────────────
+
 
 def find_dist_info(site_packages: Path, package_name: str) -> Path | None:
     """
@@ -77,6 +79,7 @@ def find_dist_info(site_packages: Path, package_name: str) -> Path | None:
 
 # ── METADATA parsing (PEP 566) ────────────────────────────────────────────────
 
+
 def parse_metadata(dist_info: Path) -> dict:
     """
     Parse the METADATA (or legacy PKG-INFO) file inside a .dist-info dir.
@@ -94,8 +97,8 @@ def parse_metadata(dist_info: Path) -> dict:
     result: dict = {"name": None, "version": None, "home_page": None, "github_url": None}
     try:
         msg = message_from_string(mf.read_text(encoding="utf-8", errors="replace"))
-        result["name"]      = msg.get("Name")
-        result["version"]   = msg.get("Version")
+        result["name"] = msg.get("Name")
+        result["version"] = msg.get("Version")
         result["home_page"] = msg.get("Home-page") or None
 
         # Scan all Project-URL headers for a GitHub/GitLab/Gitea URL
@@ -111,10 +114,7 @@ def parse_metadata(dist_info: Path) -> dict:
         if (
             not result["github_url"]
             and result["home_page"]
-            and any(
-                h in result["home_page"]
-                for h in ("github.com", "gitlab.com", "bitbucket.org")
-            )
+            and any(h in result["home_page"] for h in ("github.com", "gitlab.com", "bitbucket.org"))
         ):
             result["github_url"] = result["home_page"]
 
@@ -124,6 +124,7 @@ def parse_metadata(dist_info: Path) -> dict:
 
 
 # ── direct_url.json parsing (PEP 610) ─────────────────────────────────────────
+
 
 def parse_direct_url(dist_info: Path) -> dict:
     """
@@ -146,14 +147,14 @@ def parse_direct_url(dist_info: Path) -> dict:
         url = data.get("url", "")
 
         if "vcs_info" in data:
-            vcs    = data["vcs_info"].get("vcs", "git")
+            vcs = data["vcs_info"].get("vcs", "git")
             commit = data["vcs_info"].get("commit_id", "")
-            stype  = "github" if any(h in url for h in ("github.com", "gitlab.com")) else "vcs"
+            stype = "github" if any(h in url for h in ("github.com", "gitlab.com")) else "vcs"
             return {"source_type": stype, "source_url": url, "vcs": vcs, "commit": commit}
 
         if "dir_info" in data:
             local_path = url.removeprefix("file://")
-            editable   = data["dir_info"].get("editable", False)
+            editable = data["dir_info"].get("editable", False)
             return {"source_type": "local", "source_url": local_path, "editable": editable}
 
         return {"source_type": "url", "source_url": url}
@@ -163,6 +164,7 @@ def parse_direct_url(dist_info: Path) -> dict:
 
 
 # ── Single-package inspection ─────────────────────────────────────────────────
+
 
 def inspect_package(site_packages: Path, package_name: str) -> dict:
     """
@@ -174,16 +176,15 @@ def inspect_package(site_packages: Path, package_name: str) -> dict:
     dist_info = find_dist_info(site_packages, package_name)
     if dist_info is None:
         return {
-            "name":  package_name,
+            "name": package_name,
             "found": False,
-            "error": f"No .dist-info directory found for '{package_name}' "
-                     f"in {site_packages}",
+            "error": f"No .dist-info directory found for '{package_name}' in {site_packages}",
         }
 
-    meta       = parse_metadata(dist_info)
+    meta = parse_metadata(dist_info)
     direct_url = parse_direct_url(dist_info)
 
-    name    = meta.get("name")    or package_name
+    name = meta.get("name") or package_name
     version = meta.get("version") or "unknown"
 
     cache_path = KNOWLEDGE_CACHE / name.lower() / version
@@ -194,26 +195,22 @@ def inspect_package(site_packages: Path, package_name: str) -> dict:
         source_url = f"https://pypi.org/project/{name}/{version}/"
 
     record: dict = {
-        "name":         name,
-        "version":      version,
-        "found":        True,
-        "dist_info":    str(dist_info),
-        "source_type":  direct_url.get("source_type", "pypi"),
-        "source_url":   source_url,
-        "github_url":   meta.get("github_url"),
-        "home_page":    meta.get("home_page"),
-        "cache_path":   str(cache_path),
+        "name": name,
+        "version": version,
+        "found": True,
+        "dist_info": str(dist_info),
+        "source_type": direct_url.get("source_type", "pypi"),
+        "source_url": source_url,
+        "github_url": meta.get("github_url"),
+        "home_page": meta.get("home_page"),
+        "cache_path": str(cache_path),
         "cache_exists": cache_path.exists(),
         "cache_assets": [],
     }
 
     # Enumerate existing cache assets for delta computation
     if cache_path.exists():
-        record["cache_assets"] = sorted(
-            str(p.relative_to(cache_path))
-            for p in cache_path.rglob("*")
-            if p.is_file()
-        )
+        record["cache_assets"] = sorted(str(p.relative_to(cache_path)) for p in cache_path.rglob("*") if p.is_file())
 
     # Propagate optional VCS fields
     for opt_key in ("vcs", "commit", "editable"):
@@ -224,6 +221,7 @@ def inspect_package(site_packages: Path, package_name: str) -> dict:
 
 
 # ── Batch inspection ──────────────────────────────────────────────────────────
+
 
 def inspect_all_packages(site_packages: Path) -> list:
     """Inspect every installed package discovered via .dist-info directories."""
@@ -237,6 +235,7 @@ def inspect_all_packages(site_packages: Path) -> list:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -294,7 +293,7 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     project = Path(args.project).expanduser().resolve()
-    venv    = project / ".venv"
+    venv = project / ".venv"
 
     if not project.is_dir():
         print(f"ERROR: project path does not exist: {project}", file=sys.stderr)
@@ -316,15 +315,15 @@ def main(argv: list[str] | None = None) -> None:
             packages_list.append(inspect_package(site_packages, pkg))
 
     manifest = {
-        "project":         str(project),
-        "venv":            str(venv),
-        "site_packages":   str(site_packages),
-        "python_version":  site_packages.parent.name,   # e.g. "python3.13"
+        "project": str(project),
+        "venv": str(venv),
+        "site_packages": str(site_packages),
+        "python_version": site_packages.parent.name,  # e.g. "python3.13"
         "knowledge_cache": str(KNOWLEDGE_CACHE),
-        "packages":        packages_list,
+        "packages": packages_list,
     }
 
-    indent  = None if args.compact else 2
+    indent = None if args.compact else 2
     payload = json.dumps(manifest, indent=indent, ensure_ascii=False)
 
     if args.output:

@@ -7,8 +7,10 @@ import yaml
 
 REAL_AIDER = "aider"
 
+
 def log(msg: str) -> None:
     print(f"[Orchestrator] {msg}")
+
 
 def run_tests() -> tuple[bool, str]:
     # Prevent infinite recursion when called from test context
@@ -19,14 +21,18 @@ def run_tests() -> tuple[bool, str]:
     try:
         result = subprocess.run(
             [
-                sys.executable, "-m", "pytest", "-v", "--tb=short",
+                sys.executable,
+                "-m",
+                "pytest",
+                "-v",
+                "--tb=short",
                 "--ignore=tests/step1_baseline",
                 "--ignore=tests/step2_fake_api",
                 "--ignore=tests/step3_stress",
-                "--ignore=tests/step4_ollama_synthesizer"
+                "--ignore=tests/step4_ollama_synthesizer",
             ],
             capture_output=True,
-            text=True
+            text=True,
         )
         log(f"Pytest exit code: {result.returncode}")
         return result.returncode == 0, result.stdout + result.stderr
@@ -34,10 +40,12 @@ def run_tests() -> tuple[bool, str]:
         log(f"Pytest failed to run: {e}")
         return False, str(e)
 
+
 def cleanup_files() -> None:
     # Remove common temporary files
     for pattern in ["*.pyc", "__pycache__", ".pytest_cache"]:
         subprocess.run(["rm", "-rf", pattern], capture_output=True)
+
 
 def validate_imports() -> tuple[bool, str]:
     schema_path = Path("api_schema.yaml")
@@ -77,6 +85,7 @@ def validate_imports() -> tuple[bool, str]:
 
     return True, "All imports valid"
 
+
 def run_cleanup() -> None:
     cleanup_files()
     # Also clean git lock files
@@ -97,21 +106,13 @@ def setup_ruff_mypy() -> None:
     if not ruff_exe.exists() or not mypy_exe.exists():
         log("Ruff or Mypy missing in .venv. Installing via uv...")
         try:
-            subprocess.run(
-                ["uv", "add", "--dev", "ruff", "mypy"],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            subprocess.run(["uv", "add", "--dev", "ruff", "mypy"], capture_output=True, text=True, check=True)
             log("Ruff and Mypy installed successfully.")
         except Exception as e:
             log(f"Failed to install via uv: {e}. Trying pip...")
             try:
                 subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "ruff", "mypy"],
-                    capture_output=True,
-                    text=True,
-                    check=True
+                    [sys.executable, "-m", "pip", "install", "ruff", "mypy"], capture_output=True, text=True, check=True
                 )
                 log("Ruff and Mypy installed successfully via pip.")
             except Exception as pip_err:
@@ -139,7 +140,7 @@ ignore_missing_imports = true
     modified = False
 
     if "[tool.mypy]" not in content:
-        content += "\n\n[tool.mypy]\nfiles = [\".\"]\nstrict = true\nignore_missing_imports = true\n"
+        content += '\n\n[tool.mypy]\nfiles = ["."]\nstrict = true\nignore_missing_imports = true\n'
         modified = True
     else:
         lines = content.splitlines()
@@ -166,6 +167,7 @@ ignore_missing_imports = true
         modified = True
     else:
         import re
+
         match = re.search(r"select\s*=\s*\[([^\]]*)\]", content, re.DOTALL)
         if match:
             select_content = match.group(1)
@@ -202,11 +204,7 @@ def run_ruff(files: list[str] | None = None) -> tuple[bool, str]:
     targets = files if files else ["."]
     cmd = [str(ruff_path), "check"] + targets if ruff_path.exists() else ["ruff", "check"] + targets
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True)
         log(f"Ruff exit code: {result.returncode}")
         return result.returncode == 0, result.stdout + result.stderr
     except Exception as e:
@@ -224,11 +222,7 @@ def run_mypy(files: list[str] | None = None) -> tuple[bool, str]:
     # Always run mypy on the entire project to ensure consistency across imports/exports
     cmd = [str(mypy_path), "."] if mypy_path.exists() else ["mypy", "."]
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True)
         output = result.stdout + result.stderr
 
         # If files list is specified, filter output error lines to target paths of the changed files

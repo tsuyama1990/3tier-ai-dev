@@ -11,7 +11,7 @@ def run_3tier_dev(
     target_files: list[str],
     timeout: int = 600,
     model: str | None = None,
-    skip_self_healing: bool = False
+    skip_self_healing: bool = False,
 ) -> dict:
     """
     Safely invokes 3tier AI dev / Aider internally, bypassing sys.stdin
@@ -77,7 +77,11 @@ def run_3tier_dev(
                         msg_file.write(prompt)
                 except Exception as e:
                     orchestrator.log(f"Failed to create temp message file: {e!s}")
-                    return {"success": False, "status": "error", "message": f"Failed to create temp message file: {e!s}"}
+                    return {
+                        "success": False,
+                        "status": "error",
+                        "message": f"Failed to create temp message file: {e!s}",
+                    }
 
                 aider_cmd = [orchestrator.REAL_AIDER, "--yes", "--no-git", "--edit-format", "diff"]
                 if model:
@@ -90,12 +94,7 @@ def run_3tier_dev(
                 env["AIDER_MAP_TOKENS"] = "0"
                 try:
                     res = subprocess.run(
-                        aider_cmd,
-                        capture_output=True,
-                        text=True,
-                        stdin=subprocess.DEVNULL,
-                        timeout=timeout,
-                        env=env
+                        aider_cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=timeout, env=env
                     )
                 except subprocess.TimeoutExpired:
                     orchestrator.log("Aider initial pass timed out")
@@ -122,7 +121,7 @@ def run_3tier_dev(
                         "status": "error",
                         "message": f"Initial Aider pass failed with code: {res.returncode}",
                         "stdout": res.stdout,
-                        "stderr": res.stderr
+                        "stderr": res.stderr,
                     }
 
                 if skip_self_healing:
@@ -136,6 +135,7 @@ def run_3tier_dev(
                         test_log_parts.append(f"--- Import Validation Failures ---\n{import_err}")
                     else:
                         from ekp_forge.sandbox.scoped_lint import _changed_files
+
                         changed_file_paths = _changed_files()
                         changed_files = [str(f) for f in changed_file_paths] if changed_file_paths else None
 
@@ -159,13 +159,17 @@ def run_3tier_dev(
                         os.chdir(original_cwd)
                         integrate_ok, integrate_err = integrate_changes(Path(original_cwd), sandbox_path=ws_path)
                         if not integrate_ok:
-                            return {"success": False, "status": "error", "message": f"Integration failed: {integrate_err}"}
+                            return {
+                                "success": False,
+                                "status": "error",
+                                "message": f"Integration failed: {integrate_err}",
+                            }
                         return {
                             "success": True,
                             "files_changed": target_files,
                             "status": "success",
                             "stdout": res.stdout,
-                            "stderr": res.stderr
+                            "stderr": res.stderr,
                         }
                     orchestrator.log(f"Validation failed with skip_self_healing=True. Details: {test_log}")
                     orchestrator.log("Performing git rollback due to failure...")
@@ -180,7 +184,7 @@ def run_3tier_dev(
                         "status": "failed",
                         "message": f"Validation failed: {test_log}",
                         "stdout": res.stdout,
-                        "stderr": res.stderr
+                        "stderr": res.stderr,
                     }
 
                 # Self-healing loop
@@ -198,6 +202,7 @@ def run_3tier_dev(
                         test_log_parts.append(f"--- Import Validation Failures ---\n{import_err}")
                     else:
                         from ekp_forge.sandbox.scoped_lint import _changed_files
+
                         changed_file_paths = _changed_files()
                         changed_files = [str(f) for f in changed_file_paths] if changed_file_paths else None
 
@@ -221,13 +226,17 @@ def run_3tier_dev(
                         os.chdir(original_cwd)
                         integrate_ok, integrate_err = integrate_changes(Path(original_cwd), sandbox_path=ws_path)
                         if not integrate_ok:
-                            return {"success": False, "status": "error", "message": f"Integration failed: {integrate_err}"}
+                            return {
+                                "success": False,
+                                "status": "error",
+                                "message": f"Integration failed: {integrate_err}",
+                            }
                         return {
                             "success": True,
                             "files_changed": target_files,
                             "status": "success",
                             "stdout": res.stdout,
-                            "stderr": res.stderr
+                            "stderr": res.stderr,
                         }
 
                     retries += 1
@@ -244,7 +253,11 @@ def run_3tier_dev(
                             msg_file.write(repair_instructions)
                     except Exception as e:
                         orchestrator.log(f"Failed to create temp message file for repair: {e!s}")
-                        return {"success": False, "status": "error", "message": f"Failed to create temp message file for repair: {e!s}"}
+                        return {
+                            "success": False,
+                            "status": "error",
+                            "message": f"Failed to create temp message file for repair: {e!s}",
+                        }
 
                     orchestrator.log("Running Aider for self-healing...")
                     env = os.environ.copy()
@@ -256,7 +269,7 @@ def run_3tier_dev(
                             text=True,
                             stdin=subprocess.DEVNULL,
                             timeout=timeout,
-                            env=env
+                            env=env,
                         )
                     except subprocess.TimeoutExpired:
                         orchestrator.log("Aider repair pass timed out")
@@ -275,7 +288,7 @@ def run_3tier_dev(
                             "status": "error",
                             "message": f"Aider repair pass failed with code: {res.returncode}",
                             "stdout": res.stdout,
-                            "stderr": res.stderr
+                            "stderr": res.stderr,
                         }
 
                 orchestrator.log("Self-healing failed after max retries.")
@@ -294,7 +307,7 @@ def run_3tier_dev(
                     "status": "failed",
                     "message": "Self-healing failed after max retries",
                     "stdout": res.stdout,
-                    "stderr": res.stderr
+                    "stderr": res.stderr,
                 }
             finally:
                 os.chdir(original_cwd)

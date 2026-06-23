@@ -90,9 +90,7 @@ _PYTEST_INFRA_ATTRS = frozenset(
 )
 
 # Subprocess/shell invocation attributes
-_SUBPROCESS_ATTRS = frozenset(
-    {"run", "call", "Popen", "check_output", "check_call", "system", "popen"}
-)
+_SUBPROCESS_ATTRS = frozenset({"run", "call", "Popen", "check_output", "check_call", "system", "popen"})
 
 # Scoring weights (see implementation_plan.md)
 _W_TARGET_IMPORT = 2.0
@@ -203,9 +201,7 @@ def _dotted_name(node: ast.AST) -> str | None:
     return None
 
 
-def analyze_static(
-    file_path: Path, target_pkg: str, rel_path: str, category: str
-) -> StaticScore:
+def analyze_static(file_path: Path, target_pkg: str, rel_path: str, category: str) -> StaticScore:
     """
     Walk the AST of `file_path` and compute a StaticScore.
 
@@ -288,9 +284,7 @@ def analyze_static(
                 if root_local in target_name_to_fqn:
                     # Resolve local alias → FQN
                     fqn_root = target_name_to_fqn[root_local]
-                    fqn = fqn_root + (
-                        "." + ".".join(parts[1:]) if len(parts) > 1 else ""
-                    )
+                    fqn = fqn_root + ("." + ".".join(parts[1:]) if len(parts) > 1 else "")
                     api_surface_set.add(fqn)
 
                     # Instantiation: capital first letter of the leaf name
@@ -302,20 +296,13 @@ def analyze_static(
             if isinstance(func, ast.Attribute):
                 val = func.value
                 if isinstance(val, ast.Name):
-                    if (
-                        val.id in ("subprocess", "os")
-                        and func.attr in _SUBPROCESS_ATTRS
-                    ):
+                    if val.id in ("subprocess", "os") and func.attr in _SUBPROCESS_ATTRS:
                         score.subprocess_calls += 1
                     # pytest infrastructure
                     if val.id == "pytest" and func.attr in _PYTEST_INFRA_ATTRS:
                         score.pytest_infra_signals += 1
                 elif isinstance(val, ast.Attribute):
-                    if (
-                        isinstance(val.value, ast.Name)
-                        and val.value.id == "pytest"
-                        and val.attr in _PYTEST_INFRA_ATTRS
-                    ):
+                    if isinstance(val.value, ast.Name) and val.value.id == "pytest" and val.attr in _PYTEST_INFRA_ATTRS:
                         score.pytest_infra_signals += 1
 
         # ── if __name__ == '__main__': ─────────────────────────────────────
@@ -360,18 +347,14 @@ def prioritize(scores: list[StaticScore], top_n: int = 30) -> list[StaticScore]:
     Filter by static threshold and return top-N by raw_score.
     Files with raw_score < _STATIC_THRESHOLD are unconditionally excluded.
     """
-    passed = [
-        s for s in scores if s.raw_score >= _STATIC_THRESHOLD and not s.parse_error
-    ]
+    passed = [s for s in scores if s.raw_score >= _STATIC_THRESHOLD and not s.parse_error]
     return sorted(passed, key=lambda s: s.raw_score, reverse=True)[:top_n]
 
 
 # ── Stage 3a: Snippet Extraction ──────────────────────────────────────────────
 
 
-def extract_snippet(
-    source: str, target_pkg: str, max_lines: int = _SNIPPET_MAX_LINES
-) -> str:
+def extract_snippet(source: str, target_pkg: str, max_lines: int = _SNIPPET_MAX_LINES) -> str:
     """
     Extract a minimal runnable snippet from `source`.
 
@@ -480,9 +463,7 @@ def extract_snippet(
 
     # Fallback: if we have no non-import content, use raw head
     non_import_lines = [
-        line
-        for line in result_lines
-        if line.strip() and not line.lstrip().startswith(("import ", "from "))
+        line for line in result_lines if line.strip() and not line.lstrip().startswith(("import ", "from "))
     ]
     if not non_import_lines:
         return "\n".join(lines[:max_lines])
@@ -501,9 +482,7 @@ def extract_snippet(
 # ── Stage 3b: Isolated Execution ──────────────────────────────────────────────
 
 
-def run_snippet(
-    snippet: str, target_pkg: str, python_bin: Path, timeout: int = _EXECUTION_TIMEOUT
-) -> RunResult:
+def run_snippet(snippet: str, target_pkg: str, python_bin: Path, timeout: int = _EXECUTION_TIMEOUT) -> RunResult:
     """
     Execute `snippet` in an isolated subprocess using `python_bin`.
 
@@ -512,9 +491,7 @@ def run_snippet(
     """
     n_lines = len(snippet.splitlines())
 
-    with tempfile.NamedTemporaryFile(
-        suffix=".py", mode="w", delete=False, encoding="utf-8"
-    ) as f:
+    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
         f.write(snippet)
         tmp_path = f.name
 
@@ -533,16 +510,9 @@ def run_snippet(
 
         # Classify import errors
         if "ImportError" in res.stderr or "ModuleNotFoundError" in res.stderr:
-            if (
-                f"No module named '{target_pkg}'" in res.stderr
-                or f'No module named "{target_pkg}"' in res.stderr
-            ):
-                return RunResult(
-                    "TARGET_IMPORT_ERROR", 0.0, res.returncode, stderr, n_lines
-                )
-            return RunResult(
-                "EXTERNAL_IMPORT_ERROR", 0.9, res.returncode, stderr, n_lines
-            )
+            if f"No module named '{target_pkg}'" in res.stderr or f'No module named "{target_pkg}"' in res.stderr:
+                return RunResult("TARGET_IMPORT_ERROR", 0.0, res.returncode, stderr, n_lines)
+            return RunResult("EXTERNAL_IMPORT_ERROR", 0.9, res.returncode, stderr, n_lines)
 
         return RunResult("RUNTIME_ERROR", 0.0, res.returncode, stderr, n_lines)
 
@@ -622,9 +592,7 @@ def smoke_trace(
     candidates = prioritize(static_scores, top_n=top_n)
     candidate_paths = {s.file_path for s in candidates}
     report["after_static_filter"] = len(candidates)
-    log(
-        f"  {len(candidates)} candidates pass static filter (raw_score ≥ {_STATIC_THRESHOLD})"
-    )
+    log(f"  {len(candidates)} candidates pass static filter (raw_score ≥ {_STATIC_THRESHOLD})")
 
     # Stage 3: Snippet + Execution
     log("Stage 3: Snippet extraction + isolated execution …")
@@ -721,10 +689,7 @@ def smoke_trace(
         )
         log(f"Report written → {report_path}")
 
-    log(
-        f"Done. {len(keep_paths)}/{len(candidates)} candidates passed "
-        f"(final_score ≥ {_FINAL_THRESHOLD})"
-    )
+    log(f"Done. {len(keep_paths)}/{len(candidates)} candidates passed (final_score ≥ {_FINAL_THRESHOLD})")
     return report
 
 
@@ -782,9 +747,7 @@ Examples:
         metavar="PKG",
         help="Target package name (required with --cache-dir)",
     )
-    p.add_argument(
-        "--venv", metavar="DIR", help="Path to .venv (required with --cache-dir)"
-    )
+    p.add_argument("--venv", metavar="DIR", help="Path to .venv (required with --cache-dir)")
     p.add_argument(
         "--top-n",
         metavar="N",

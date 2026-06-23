@@ -16,25 +16,18 @@ class TestMCPServer(unittest.TestCase):
         mock_res.stderr = ""
         mock_run.return_value = mock_res
 
-        result = execute_simple_aider(
-            prompt="implement binary search",
-            target_files=["search.py"]
-        )
+        result = execute_simple_aider(prompt="implement binary search", target_files=["search.py"])
 
         # Assert subprocess.run was called correctly
         mock_run.assert_called_once_with(
             ["aider", "--message", "implement binary search", "--yes", "search.py"],
             capture_output=True,
             text=True,
-            stdin=subprocess.DEVNULL
+            stdin=subprocess.DEVNULL,
         )
 
         # Assert returned dict structure
-        self.assertEqual(result, {
-            "success": True,
-            "stdout": "Aider ran successfully",
-            "stderr": ""
-        })
+        self.assertEqual(result, {"success": True, "stdout": "Aider ran successfully", "stderr": ""})
 
     @patch("subprocess.run")
     def test_execute_simple_aider_with_model(self, mock_run):
@@ -44,24 +37,16 @@ class TestMCPServer(unittest.TestCase):
         mock_res.stderr = "Error trace"
         mock_run.return_value = mock_res
 
-        result = execute_simple_aider(
-            prompt="add logging",
-            target_files=["app.py", "utils.py"],
-            model="gpt-4"
-        )
+        result = execute_simple_aider(prompt="add logging", target_files=["app.py", "utils.py"], model="gpt-4")
 
         mock_run.assert_called_once_with(
             ["aider", "--message", "add logging", "--yes", "--model", "gpt-4", "app.py", "utils.py"],
             capture_output=True,
             text=True,
-            stdin=subprocess.DEVNULL
+            stdin=subprocess.DEVNULL,
         )
 
-        self.assertEqual(result, {
-            "success": False,
-            "stdout": "Aider failed",
-            "stderr": "Error trace"
-        })
+        self.assertEqual(result, {"success": False, "stdout": "Aider failed", "stderr": "Error trace"})
 
     @patch("ekp_forge.mcp_server.run_3tier_dev")
     def test_execute_strict_compile(self, mock_run_3tier):
@@ -70,15 +55,12 @@ class TestMCPServer(unittest.TestCase):
             "files_changed": ["main.py"],
             "status": "success",
             "stdout": "Compiled successfully",
-            "stderr": ""
+            "stderr": "",
         }
         mock_run_3tier.return_value = mock_output
 
         result = execute_strict_compile(
-            prompt="compile project",
-            target_pkg="my_pkg",
-            target_files=["main.py"],
-            model="ollama/qwen2.5-coder:7b"
+            prompt="compile project", target_pkg="my_pkg", target_files=["main.py"], model="ollama/qwen2.5-coder:7b"
         )
 
         mock_run_3tier.assert_called_once_with(
@@ -86,10 +68,11 @@ class TestMCPServer(unittest.TestCase):
             target_pkg="my_pkg",
             target_files=["main.py"],
             model="ollama/qwen2.5-coder:7b",
-            timeout=600
+            timeout=600,
         )
 
         self.assertEqual(result, mock_output)
+
 
 if __name__ == "__main__":
     unittest.main()

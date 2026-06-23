@@ -79,9 +79,7 @@ def load_report(cache_dir: Path) -> dict:
                 files.append(
                     {
                         "rel_path": rel,
-                        "category": "example"
-                        if subdir == "verified_examples"
-                        else "test",
+                        "category": "example" if subdir == "verified_examples" else "test",
                         "final_score": 0.0,
                         "api_surface": [],
                     }
@@ -206,9 +204,7 @@ def generate_integration_graph(
     total_unique_apis = len(api_index)
     all_modules = list(modules.keys())
     top_modules = [m for m in all_modules if m != core_key]
-    summary_modules = (
-        [core_key, *top_modules[:3]] if core_key in modules else top_modules[:3]
-    )
+    summary_modules = [core_key, *top_modules[:3]] if core_key in modules else top_modules[:3]
 
     lines.extend(
         [
@@ -234,6 +230,7 @@ def _snippet_from_file(file_path: Path, max_lines: int = 20) -> str:
         return "\n".join(snippet_lines[:max_lines])
     except Exception:
         return "# (could not read file)"
+
 
 def _escape_mermaid_label(label: str) -> str:
     """
@@ -419,10 +416,7 @@ def _get_api_key() -> str:
                 return val
         except Exception:
             pass
-    raise RuntimeError(
-        "OPENROUTER_API_KEY not found in environment or ~/.zshrc. "
-        "Set it before running with --llm."
-    )
+    raise RuntimeError("OPENROUTER_API_KEY not found in environment or ~/.zshrc. Set it before running with --llm.")
 
 
 def _call_openrouter(
@@ -446,15 +440,17 @@ def _call_openrouter(
         The assistant's reply string.
     """
     api_key = _get_api_key()
-    payload = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": _SYNTHESIS_SYSTEM_PROMPT},
-            {"role": "user",   "content": prompt},
-        ],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-    }).encode("utf-8")
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": _SYNTHESIS_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+    ).encode("utf-8")
 
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -503,18 +499,20 @@ def _call_ollama(
     Raises:
         RuntimeError: If the Ollama server is unreachable or returns an error.
     """
-    payload = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": _SYNTHESIS_SYSTEM_PROMPT},
-            {"role": "user",   "content": prompt},
-        ],
-        "stream": False,
-        "options": {
-            "num_predict": max_tokens,
-            "temperature": temperature,
-        },
-    }).encode("utf-8")
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": _SYNTHESIS_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            "stream": False,
+            "options": {
+                "num_predict": max_tokens,
+                "temperature": temperature,
+            },
+        }
+    ).encode("utf-8")
 
     url = f"{ollama_base_url.rstrip('/')}/api/chat"
     req = urllib.request.Request(
@@ -527,10 +525,7 @@ def _call_ollama(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.URLError as exc:
-        raise RuntimeError(
-            f"Ollama server unreachable at {url}: {exc}. "
-            "Ensure 'ollama serve' is running."
-        ) from exc
+        raise RuntimeError(f"Ollama server unreachable at {url}: {exc}. Ensure 'ollama serve' is running.") from exc
 
     # Ollama /api/chat response: {"message": {"role": "assistant", "content": "..."}}
     return data["message"]["content"]
@@ -602,9 +597,7 @@ def synthesize_semantic_graph(
         log("No snippets found in cache. Falling back to template mode.")
         return generate_integration_graph(api_index, report, cache_dir, target_pkg)
 
-    api_surface_str = "\n".join(
-        sorted(report.get("api_surface", list(api_index.keys())))
-    )
+    api_surface_str = "\n".join(sorted(report.get("api_surface", list(api_index.keys()))))
 
     prompt = _SYNTHESIS_USER_TEMPLATE.format(
         package=target_pkg,
@@ -618,9 +611,7 @@ def synthesize_semantic_graph(
     if llm_provider == "ollama":
         log(f"Calling Ollama ({model} @ {ollama_base_url}) with {len(snippets)} chars of snippets …")
         try:
-            result = _call_ollama(
-                prompt, model=model, ollama_base_url=ollama_base_url
-            )
+            result = _call_ollama(prompt, model=model, ollama_base_url=ollama_base_url)
             log("Ollama synthesis complete.")
             return result
         except Exception as exc:
@@ -820,8 +811,7 @@ Examples:
         "--ollama-url",
         metavar="URL",
         default="http://localhost:11434",
-        help="Ollama server base URL (default: http://localhost:11434). "
-             "Used when --llm-provider ollama.",
+        help="Ollama server base URL (default: http://localhost:11434). Used when --llm-provider ollama.",
     )
     p.add_argument(
         "--compact",

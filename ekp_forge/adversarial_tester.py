@@ -45,14 +45,19 @@ Return ONLY the raw python test code inside a single ```python ... ``` code bloc
 Do NOT write any explanation outside the code block.
 """
 
-        payload = json.dumps({
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": "You are a senior test automation engineer. Output only pytest code inside python block."},
-                {"role": "user", "content": prompt}
-            ],
-            "stream": False,
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "model": model_name,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a senior test automation engineer. Output only pytest code inside python block.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+            }
+        ).encode("utf-8")
 
         url = "http://localhost:11434/api/chat"
         req = urllib.request.Request(
@@ -107,15 +112,15 @@ Do NOT write any explanation outside the code block.
 
         # Parse error_chunk_summary
         from ekp_forge.schemas.task_schema import ErrorChunkSummary
+
         summary_dict = worker_result.get("error_chunk_summary", {})
         if isinstance(summary_dict, dict):
             entries_list = summary_dict.get("entries", [])
             from ekp_forge.schemas.task_schema import ErrorChunkEntry
+
             entries = [ErrorChunkEntry(**e) if isinstance(e, dict) else e for e in entries_list]
             error_chunk = ErrorChunkSummary(
-                task_id=task.task_id,
-                entries=entries,
-                total_retries=summary_dict.get("total_retries", len(entries))
+                task_id=task.task_id, entries=entries, total_retries=summary_dict.get("total_retries", len(entries))
             )
         else:
             error_chunk = summary_dict

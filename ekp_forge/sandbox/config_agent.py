@@ -111,6 +111,7 @@ def apply_config_changes(config_path: Path, requests: list[Any]) -> bool:
 
     try:
         import sys
+
         if sys.version_info >= (3, 11):
             import tomllib
         else:
@@ -161,4 +162,3 @@ def apply_config_changes(config_path: Path, requests: list[Any]) -> bool:
     except Exception as exc:
         print(f"Error applying config changes: {exc}")
         return False
-

@@ -119,7 +119,10 @@ pytest -v --ignore=tests/step4_ollama_synthesizer/fixtures/
 
 ## 7. Organizational Design & Agent Workflow
 
-EKP-Forge is structured around a multi-tier **Manager-Worker Organizational Design** that enables autonomous development with strict validation constraints and self-healing.
+EKP-Forge utilizes a multi-tier, phase-isolated **Autonomous AI Agent Organization Design** configured to ensure code safety, validation correctness, and non-destructive execution. 
+
+For the complete architectural layout, agent roles (CTO, PM, Architect, Worker, Verification, Integrator, Reviewer), and detail mappings:
+👉 **[Autonomous AI Agent Organization Design (docs/organization_design.md)](file:///home/tomo/project/000_devenv/ekp-forge/docs/organization_design.md)**
 
 ```mermaid
 graph TD
@@ -127,12 +130,13 @@ graph TD
     Manager["Manager Agent (manager.py)"]
     RAG["Assumption RAG Crawler (rag_crawler.py)"]
     Tree["Task Tree Executor (task_tree.py)"]
-    Worker["Worker Agent (worker.py)"]
+    Worker["Worker Agent (worker.py in Sandbox)"]
     Gatekeeper["AST Import Gatekeeper"]
     Pytest["Pytest Runner"]
-    Ruff["Ruff Linter"]
-    Mypy["Mypy Type Checker"]
+    Ruff["Ruff Linter (Scoped)"]
+    Mypy["Mypy Type Checker (Scoped)"]
     Adversarial["Adversarial Auditor (adversarial_tester.py)"]
+    Integrator["Integrator Agent (integrator.py)"]
 
     Director -->|Task Schema / Epic| Manager
     Manager -->|Verify Assumptions| RAG
@@ -145,7 +149,8 @@ graph TD
     Worker -->|5. Run Unit Tests| Pytest
     Worker -->|Auto-Heal on Failures| Worker
     Worker -->|6. Edge Case Audit| Adversarial
-    Worker -->|Commit Staged Diff| Manager
+    Worker -->|Verified Diff| Integrator
+    Integrator -->|Commit Staged Diff| Manager
 ```
 
 ### 7.1 Agent Roles & Responsibilities
@@ -154,21 +159,17 @@ graph TD
    - Responsible for high-level goal mapping, architectural plans, and epic/task schema construction.
 2. **Manager Agent (`manager.py`)**
    - **Triage**: Compares task assumptions against existing ADRs using the **Assumption RAG Crawler**; rejects tasks if key-value or logical conflicts are detected.
-   - **Decomposition**: Decomposes large Epic tasks into parallelizable subtasks by analyzing module dependencies (if modules $\ge 3$) or constraint size (if constraints $\ge 5$).
+   - **Decomposition**: Decomposes large Epic tasks into parallelizable subtasks by analyzing module dependencies or constraint size.
    - **Validation**: Inspects Worker results and ADR records to decide whether to accept or escalate outcomes.
 3. **Worker Agent (`worker.py` / `orchestrator_api.py`)**
-   - **Aider Self-Repairing Loop**: Runs Aider with LLM (local Ollama/Qwen or API-based Claude/GPT) to implement code modifications.
-   - **Verification Pipeline**: Runs a strict verification checklist before committing code changes:
-     - *AST Import Gatekeeper*: Validates imports against `api_schema.yaml`.
-     - *Ruff*: Enforces code formatting and stylistic guidelines (e.g. McCabe, naming rules).
-     - *Mypy*: Verifies types strictly (`strict = true`).
-     - *Pytest*: Verifies code satisfies test specifications.
+   - **Sandbox Isolation**: Runs Aider with local LLM (Ollama/Qwen) or API keys strictly inside a temporary `SandboxWorkspace` with zero git write capabilities.
+   - **Verification Pipeline**: Runs a strict verification checklist (AST Gatekeeper, Scoped Ruff, Scoped Mypy, Pytest) before passing the diff to the Integrator Agent.
    - **Aggregated Auto-Healing**: If any compiler, linter, or test failures occur, the error messages are aggregated and fed back to Aider. The cycle repeats up to `max_retries` before triggering safety rollbacks and escalation.
 
 ### 7.2 Core Modules & Support Engines
 
 - **Task Tree Executor (`task_tree.py`)**: A thread-safe parallel executor that dynamically schedules, coordinates, and executes subtasks within a dependency tree.
-- **Assumption RAG Crawler (`rag_crawler.py`)**: Uses a lightweight TF-IDF and Cosine Similarity engine to perform semantic queries on markdown ADR logs in `decisions/`.
+- **Assumption RAG Crawler (`rag_crawler.py`)**: Performs semantic queries on markdown ADR logs in `decisions/`.
 - **Adversarial Tester (`adversarial_tester.py`)**: Automatically drafts edge-case verification tests targeting modifications, runs those tests, and constructs a quality audit scorecard (Patch Report).
 
 ---
