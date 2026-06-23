@@ -78,10 +78,12 @@ class TestOrchestratorAPI(unittest.TestCase):
         """標準入力に一切依存しないこと（対話モードの排除）"""
         mock_stdin_read.side_effect = RuntimeError("sys.stdin.read() MUST NOT BE CALLED in API mode")
 
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run") as mock_run, \
+             patch("ekp_forge.sandbox.integrator.integrate_changes") as mock_integrate:
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_run.return_value = mock_result
+            mock_integrate.return_value = (True, "Successfully integrated 1 files")
 
             with patch("pathlib.Path.exists", return_value=True):
                 run_3tier_dev("prompt", "ase", ["dummy.py"])
@@ -89,7 +91,8 @@ class TestOrchestratorAPI(unittest.TestCase):
     @patch("pathlib.Path.exists")
     def test_fails_fast_if_knowledge_missing(self, mock_exists):
         """知識(Knowledge)が存在しない場合、Aiderを起動せずに即時エラーを返すこと"""
-        mock_exists.return_value = False
+        # mock exists() to return True for pyproject.toml to prevent setup_ruff_mypy overwriting it
+        mock_exists.side_effect = lambda *args, **kwargs: any("pyproject.toml" in str(arg) for arg in args)
 
         result = run_3tier_dev("prompt", "unknown_pkg", ["dummy.py"])
 
