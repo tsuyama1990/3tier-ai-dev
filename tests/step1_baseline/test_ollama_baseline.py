@@ -14,7 +14,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from orchestrator_api import run_3tier_dev
+from ekp_forge.orchestrator_api import run_3tier_dev
 
 OLLAMA_URL = "http://localhost:11434"
 OLLAMA_MODEL = "ollama/qwen2.5-coder:7b"

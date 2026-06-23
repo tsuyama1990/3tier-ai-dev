@@ -7,7 +7,7 @@ import re
 import pytest
 from pydantic import ValidationError
 
-from schemas.task_schema import (
+from ekp_forge.schemas.task_schema import (
     ErrorChunkEntry,
     ErrorChunkSummary,
     EscalationReason,

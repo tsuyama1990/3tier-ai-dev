@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from adversarial_tester import AdversarialTester
-from schemas.task_schema import TaskSchema
+from ekp_forge.adversarial_tester import AdversarialTester
+from ekp_forge.schemas.task_schema import TaskSchema
 
 
 @pytest.fixture

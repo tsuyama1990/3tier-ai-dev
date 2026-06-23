@@ -10,7 +10,7 @@ import unittest
 HAS_YAML = importlib.util.find_spec("yaml") is not None
 
 if HAS_YAML:
-    from orchestrator import run_cleanup, run_tests, validate_imports
+    from ekp_forge.orchestrator import run_cleanup, run_tests, validate_imports
 else:
     run_cleanup = None  # type: ignore[assignment]
     run_tests = None  # type: ignore[assignment]

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rag_crawler import AssumptionRAGCrawler
+from ekp_forge.rag_crawler import AssumptionRAGCrawler
 
 
 class TestAssumptionRAGCrawler(unittest.TestCase):
@@ -150,6 +150,36 @@ class TestAssumptionRAGCrawler(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["score"], 0.0)
 
+    def test_hybrid_search_boosts_relevance(self) -> None:
+        """error_type や module_name が ADR に含まれている場合、スコアがブーストされること"""
+        adr = self.temp_dir / "adr.md"
+        adr.write_text(
+            "# ADR: T-1\n"
+            "## 1. Context\nUse python module authentication.py.\n"
+            "## 2. Assumptions\n```json\n{}\n```\n"
+            "## 3. Decision\nFixes MypyTypeError.",
+            encoding="utf-8"
+        )
+        self.crawler.build_index()
+        
+        # 1. Base search
+        base_results = self.crawler.search("authentication", top_k=1)
+        base_score = base_results[0]["score"]
+        self.assertGreater(base_score, 0.0)
+
+        # 2. Boosted with error_type
+        boosted_err = self.crawler.search("authentication", error_type="MypyTypeError", top_k=1)
+        self.assertAlmostEqual(boosted_err[0]["score"], base_score * 2.0, places=4)
+
+        # 3. Boosted with module_name
+        boosted_mod = self.crawler.search("authentication", module_name="authentication.py", top_k=1)
+        self.assertAlmostEqual(boosted_mod[0]["score"], base_score * 1.5, places=4)
+
+        # 4. Double boosted
+        boosted_both = self.crawler.search("authentication", error_type="MypyTypeError", module_name="authentication.py", top_k=1)
+        self.assertAlmostEqual(boosted_both[0]["score"], base_score * 3.0, places=4)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -7,11 +7,11 @@ from unittest.mock import patch
 
 import pytest
 
-from schemas.task_schema import (
+from ekp_forge.schemas.task_schema import (
     EscalationReason,
     TaskSchema,
 )
-from worker import WorkerAgent
+from ekp_forge.worker import WorkerAgent
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -42,9 +42,9 @@ def worker() -> WorkerAgent:
 @pytest.fixture(autouse=True)
 def mock_ruff_mypy() -> Generator[None, None, None]:
     with (
-        patch("worker.run_ruff", return_value=(True, "ruff ok")),
-        patch("worker.run_mypy", return_value=(True, "mypy ok")),
-        patch("worker.setup_ruff_mypy"),
+        patch("ekp_forge.worker.run_ruff", return_value=(True, "ruff ok")),
+        patch("ekp_forge.worker.run_mypy", return_value=(True, "mypy ok")),
+        patch("ekp_forge.worker.setup_ruff_mypy"),
     ):
         yield
 
@@ -323,5 +323,35 @@ class TestErrorModule:
         assert "tests/test_auth.py" in WorkerAgent._error_module(output, modules)
 
     def test_fallback_unknown(self) -> None:
+        """対応するモジュールが見つからない場合 unknown が返ること"""
         output = "no module info here"
         assert WorkerAgent._error_module(output, []) == "unknown"
+
+
+class TestCompressErrorLog:
+    def test_compress_error_log_short(self) -> None:
+        """短いエラーログはそのまま返されること"""
+        agent = WorkerAgent()
+        text = "Short error log"
+        assert agent._compress_error_log(text) == text
+
+    def test_compress_error_log_filtering(self) -> None:
+        """長いログから FAILED や Traceback などの重要行が抽出されること"""
+        agent = WorkerAgent()
+        lines = [
+            "verbose setup output line 1",
+            "verbose setup output line 2",
+            "Traceback (most recent call last):",
+            "  File \"test.py\", line 10, in test_foo",
+            "    assert 1 == 2",
+            "AssertionError: assert 1 == 2",
+            "verbose teardown output line 1",
+            "verbose teardown output line 2",
+        ] * 20  # Make it long enough (>1500 chars)
+        text = "\n".join(lines)
+        compressed = agent._compress_error_log(text)
+        assert len(compressed) < len(text)
+        assert "Traceback" in compressed
+        assert "AssertionError" in compressed
+        assert "verbose setup output line 1" not in compressed
+

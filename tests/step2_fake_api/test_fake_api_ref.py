@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from orchestrator_api import run_3tier_dev
+from ekp_forge.orchestrator_api import run_3tier_dev
 
 
 def test_fake_api_reference():

@@ -3,10 +3,10 @@
 import unittest
 from unittest.mock import MagicMock
 
-from manager import ManagerAgent
-from mcp_server import run_epic_task
-from schemas.task_schema import TaskSchema, _generate_task_id
-from task_tree import TaskTree
+from ekp_forge.manager import ManagerAgent
+from ekp_forge.mcp_server import run_epic_task
+from ekp_forge.schemas.task_schema import TaskSchema, _generate_task_id
+from ekp_forge.task_tree import TaskTree
 
 
 class TestTaskTreeAndDecomposition(unittest.TestCase):
@@ -206,8 +206,8 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
         # Mock execute_verification_loop to run cleanly using patch context managers
         from unittest.mock import patch
 
-        import manager
-        import worker
+        import ekp_forge.manager as manager
+        import ekp_forge.worker as worker
 
         with patch.object(worker.WorkerAgent, "execute_verification_loop") as mock_evl, \
              patch.object(manager.ManagerAgent, "triage") as mock_triage, \

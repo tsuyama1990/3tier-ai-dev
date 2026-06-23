@@ -8,8 +8,8 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from manager import ManagerAgent
-from schemas.task_schema import (
+from ekp_forge.manager import ManagerAgent
+from ekp_forge.schemas.task_schema import (
     ErrorChunkEntry,
     ErrorChunkSummary,
     EscalationReason,
@@ -336,3 +336,45 @@ class TestStaticValidation:
         diff = "+def foo(): pass"
         result = manager._static_validation(valid_task, diff)
         assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# Challenge Agent & Architect Boundary Checks
+# ---------------------------------------------------------------------------
+
+
+class TestChallengeAndArchitectChecks:
+    def test_challenge_agent_overengineering_detected(self, manager: ManagerAgent, valid_task: TaskSchema) -> None:
+        """過剰エンジニアリング(redisなど)を検出して REJECT すること"""
+        valid_task.goal = "Implement redis caching for user profiles"
+        status, reason = manager.triage(valid_task)
+        assert status == "REJECT"
+        assert "Challenge Agent" in reason
+        assert "redis" in reason
+
+    def test_challenge_agent_bypass_route(self, manager: ManagerAgent, valid_task: TaskSchema) -> None:
+        """bypass_challenge_agent または force_accept が真の場合、ACCEPT となること"""
+        valid_task.goal = "Implement redis caching for user profiles"
+        valid_task.bypass_challenge_agent = True
+        with patch.object(manager, "_check_assumptions", return_value=None):
+            status, plan = manager.triage(valid_task)
+            assert status == "ACCEPT"
+
+        valid_task.bypass_challenge_agent = False
+        valid_task.force_accept = True
+        with patch.object(manager, "_check_assumptions", return_value=None):
+            status, plan = manager.triage(valid_task)
+            assert status == "ACCEPT"
+
+    def test_architect_boundary_violation(self, manager: ManagerAgent, valid_task: TaskSchema) -> None:
+        """禁止された設定・システムファイルを変更しようとしたら REJECT すること"""
+        valid_task.affected_modules = ["pyproject.toml"]
+        status, reason = manager.triage(valid_task)
+        assert status == "REJECT"
+        assert "Architect" in reason
+
+        valid_task.affected_modules = [".venv/bin/app.py"]
+        status, reason = manager.triage(valid_task)
+        assert status == "REJECT"
+        assert "Architect" in reason
+

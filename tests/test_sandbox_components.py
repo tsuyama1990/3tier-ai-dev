@@ -27,13 +27,13 @@ from typing import Any
 
 import pytest
 
-import sandbox.workspace as workspace
-import sandbox.constraints as constraints
-import sandbox.verification as verification
-import sandbox.cloner as cloner
-import sandbox.integrator as integrator
-import sandbox.config_agent as config_agent
-import sandbox.scoped_lint as scoped_lint
+import ekp_forge.sandbox.workspace as workspace
+import ekp_forge.sandbox.constraints as constraints
+import ekp_forge.sandbox.verification as verification
+import ekp_forge.sandbox.cloner as cloner
+import ekp_forge.sandbox.integrator as integrator
+import ekp_forge.sandbox.config_agent as config_agent
+import ekp_forge.sandbox.scoped_lint as scoped_lint
 
 
 @pytest.fixture
@@ -146,7 +146,7 @@ def test_scoped_lint_delegates_to_orchestrator(monkeypatch: pytest.MonkeyPatch) 
         called["mypy"] = True
         return True, "mypy ok"
 
-    import orchestrator
+    import ekp_forge.orchestrator as orchestrator
 
     monkeypatch.setattr(orchestrator, "run_ruff", fake_ruff)
     monkeypatch.setattr(orchestrator, "run_mypy", fake_mypy)
@@ -155,3 +155,36 @@ def test_scoped_lint_delegates_to_orchestrator(monkeypatch: pytest.MonkeyPatch) 
     assert success
     assert called["ruff"] and called["mypy"]
     assert "Ruff and MyPy passed" in msg
+
+
+def test_config_agent_toml_editing(tmp_path: Path) -> None:
+    from ekp_forge.schemas.task_schema import ConfigChangeRequest
+    cfg = tmp_path / "pyproject.toml"
+    cfg.write_text("[tool.ruff]\nselect = [\"E\"]\n", encoding="utf-8")
+    
+    reqs = [
+        ConfigChangeRequest(key_path=["tool", "ruff", "select"], action="append", value="W"),
+        ConfigChangeRequest(key_path=["tool", "mypy", "strict"], action="set", value=True),
+    ]
+    ok = config_agent.apply_config_changes(cfg, reqs)
+    assert ok
+    content = cfg.read_text(encoding="utf-8")
+    assert "select = [\"E\", \"W\"]" in content or "select = [\"E\", \"W\"]" in content.replace(" ", "")
+    assert "strict = true" in content
+
+
+def test_integrator_file_limit_enforced(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # 4 files changed
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess:
+        if args[0][:2] == ["git", "diff"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="a.py\nb.py\nc.py\nd.py\n", stderr="")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    success, msg = integrator.integrate_changes(tmp_path)
+    assert not success
+    assert "exceeding the limit of 3" in msg
+
+
