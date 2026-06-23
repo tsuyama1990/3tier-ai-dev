@@ -21,6 +21,11 @@ def run_3tier_dev(
     and enforcing timeout, lock mechanism, and self-healing loop.
     Returns results in a structured dictionary.
     """
+    try:
+        orchestrator.setup_ruff_mypy()
+    except Exception as e:
+        orchestrator.log(f"Failed to run setup_ruff_mypy: {e!s}")
+
     lock_file = Path(".ekp.lock")
     if os.path.exists(".ekp.lock"):
         return {"success": False, "status": "locked"}
@@ -65,20 +70,23 @@ def run_3tier_dev(
             orchestrator.log(f"Failed to create temp message file: {e!s}")
             return {"success": False, "status": "error", "message": f"Failed to create temp message file: {e!s}"}
 
-        aider_cmd = [orchestrator.REAL_AIDER, "--yes", "--no-git"]
+        aider_cmd = [orchestrator.REAL_AIDER, "--yes", "--no-git", "--edit-format", "diff"]
         if model:
             aider_cmd.extend(["--model", model])
         aider_cmd.extend([*extra_args, "--message-file", temp_msg_file, *target_files])
 
         orchestrator.log(f"Starting initial Aider pass with command: {' '.join(aider_cmd)}")
 
+        env = os.environ.copy()
+        env["AIDER_MAP_TOKENS"] = "0"
         try:
             res = subprocess.run(
                 aider_cmd,
                 capture_output=True,
                 text=True,
                 stdin=subprocess.DEVNULL,
-                timeout=timeout
+                timeout=timeout,
+                env=env
             )
         except subprocess.TimeoutExpired:
             orchestrator.log("Aider initial pass timed out")
@@ -112,11 +120,26 @@ def run_3tier_dev(
             orchestrator.run_cleanup()
             orchestrator.cleanup_files()
             import_success, import_err = orchestrator.validate_imports()
+            
+            test_log_parts = []
             if not import_success:
                 success = False
-                test_log = import_err
+                test_log_parts.append(f"--- Import Validation Failures ---\n{import_err}")
             else:
-                success, test_log = orchestrator.run_tests()
+                pytest_success, pytest_log = orchestrator.run_tests()
+                ruff_success, ruff_log = orchestrator.run_ruff()
+                mypy_success, mypy_log = orchestrator.run_mypy()
+                
+                success = pytest_success and ruff_success and mypy_success
+                
+                if not pytest_success:
+                    test_log_parts.append(f"--- Pytest Failures ---\n{pytest_log}")
+                if not ruff_success:
+                    test_log_parts.append(f"--- Ruff Lint Failures ---\n{ruff_log}")
+                if not mypy_success:
+                    test_log_parts.append(f"--- Mypy Type Failures ---\n{mypy_log}")
+            
+            test_log = "\n\n".join(test_log_parts)
 
             if success:
                 orchestrator.log("Validation passed with skip_self_healing=True.")
@@ -151,14 +174,29 @@ def run_3tier_dev(
             orchestrator.run_cleanup()
             orchestrator.cleanup_files()
             import_success, import_err = orchestrator.validate_imports()
+            
+            test_log_parts = []
             if not import_success:
                 success = False
-                test_log = import_err
+                test_log_parts.append(f"--- Import Validation Failures ---\n{import_err}")
             else:
-                success, test_log = orchestrator.run_tests()
+                pytest_success, pytest_log = orchestrator.run_tests()
+                ruff_success, ruff_log = orchestrator.run_ruff()
+                mypy_success, mypy_log = orchestrator.run_mypy()
+                
+                success = pytest_success and ruff_success and mypy_success
+                
+                if not pytest_success:
+                    test_log_parts.append(f"--- Pytest Failures ---\n{pytest_log}")
+                if not ruff_success:
+                    test_log_parts.append(f"--- Ruff Lint Failures ---\n{ruff_log}")
+                if not mypy_success:
+                    test_log_parts.append(f"--- Mypy Type Failures ---\n{mypy_log}")
+            
+            test_log = "\n\n".join(test_log_parts)
 
             if success:
-                orchestrator.log("All tests passed (or no tests found). Success!")
+                orchestrator.log("All tests and quality checks passed. Success!")
                 return {
                     "success": True,
                     "files_changed": target_files,
@@ -168,7 +206,7 @@ def run_3tier_dev(
                 }
 
             retries += 1
-            orchestrator.log(f"Test failure detected. Retrying correction ({retries}/{max_retries})...")
+            orchestrator.log(f"Verification failure detected. Retrying correction ({retries}/{max_retries})...")
 
             repair_instructions = (
                 f"The tests failed. Please fix the implementation to make the tests pass.\n"
@@ -184,13 +222,16 @@ def run_3tier_dev(
                 return {"success": False, "status": "error", "message": f"Failed to create temp message file for repair: {e!s}"}
 
             orchestrator.log("Running Aider for self-healing...")
+            env = os.environ.copy()
+            env["AIDER_MAP_TOKENS"] = "0"
             try:
                 res = subprocess.run(
                     aider_cmd,
                     capture_output=True,
                     text=True,
                     stdin=subprocess.DEVNULL,
-                    timeout=timeout
+                    timeout=timeout,
+                    env=env
                 )
             except subprocess.TimeoutExpired:
                 orchestrator.log("Aider repair pass timed out")

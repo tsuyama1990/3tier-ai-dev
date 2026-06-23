@@ -10,6 +10,9 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
+# Import verification & setup from orchestrator
+from orchestrator import run_mypy, run_ruff, setup_ruff_mypy
+
 from schemas.task_schema import (
     ErrorChunkEntry,
     ErrorChunkSummary,
@@ -58,7 +61,7 @@ class WorkerAgent:
         run_adversarial: bool = True,
     ) -> dict[str, Any]:
         """
-        Run Aider + pytest in a loop with escalation policy and optional adversarial auditing.
+        Run Aider + Quality Checks (pytest, ruff, mypy) in a loop with escalation policy.
 
         Returns:
             {
@@ -75,107 +78,183 @@ class WorkerAgent:
 
         assert isinstance(task, TaskSchema), "task must be a TaskSchema instance"
 
+        # Step 0: Ensure strict checkers are set up
+        try:
+            setup_ruff_mypy()
+        except Exception as e:
+            print(f"Failed to run setup_ruff_mypy: {e}", file=sys.stderr)
+
         error_chunk = ErrorChunkSummary(task_id=task.task_id)
         prev_error_hash: str | None = None
-        aider_cmd = self._build_aider_command(task, plan, rag_context)
 
-        for attempt in range(1, self.max_retries + 1):
-            # --- Step 1: Aider execution ---
-            aider_ok, aider_msg = self._run_aider(aider_cmd, attempt)
-            if not aider_ok:
-                error_chunk.add_entry(
-                    ErrorChunkEntry(
-                        attempt=attempt,
-                        error_type="AiderExecutionError",
-                        module=task.affected_modules[0],
-                        action_taken=aider_msg,
+        # Build stable Aider command arguments
+        temp_msg = ".aider.msg.temp"
+        aider_cmd = [
+            "aider",
+            "--yes",
+            "--no-git",
+            "--edit-format",
+            "diff",
+        ]
+        if self.model:
+            aider_cmd.extend(["--model", self.model])
+        if os.path.exists(".ai-knowledge"):
+            for f in sorted(os.listdir(".ai-knowledge")):
+                fpath = os.path.join(".ai-knowledge", f)
+                if os.path.isfile(fpath) and f.endswith(".md"):
+                    aider_cmd.extend(["--read", fpath])
+        aider_cmd.extend(["--message-file", temp_msg])
+        aider_cmd.extend(task.affected_modules)
+
+        current_instructions = plan
+
+        try:
+            for attempt in range(1, self.max_retries + 1):
+                # Write current plan/errors to temp file
+                self._write_temp_message(current_instructions)
+
+                # --- Step 1: Aider execution ---
+                aider_ok, aider_msg = self._run_aider(aider_cmd, attempt)
+                if not aider_ok:
+                    error_chunk.add_entry(
+                        ErrorChunkEntry(
+                            attempt=attempt,
+                            error_type="AiderExecutionError",
+                            module=task.affected_modules[0] if task.affected_modules else "*",
+                            action_taken=aider_msg,
+                        )
                     )
-                )
-                # Aider failure → break out (non-recoverable tool error)
-                break
+                    break
 
-            # --- Step 2: AST gatekeeper (validate imports) ---
-            import_ok, import_err = self._validate_imports()
-            if not import_ok:
-                error_chunk.add_entry(
-                    ErrorChunkEntry(
-                        attempt=attempt,
-                        error_type="ImportViolation",
-                        module="*",
-                        action_taken=import_err,
+                # --- Step 2: AST gatekeeper (validate imports) ---
+                import_ok, import_err = self._validate_imports()
+                if not import_ok:
+                    error_chunk.add_entry(
+                        ErrorChunkEntry(
+                            attempt=attempt,
+                            error_type="ImportViolation",
+                            module="*",
+                            action_taken=import_err,
+                        )
                     )
+                    continue
+
+                # --- Step 3: Ruff lint execution ---
+                ruff_ok, ruff_output = run_ruff()
+                if not ruff_ok:
+                    error_chunk.add_entry(
+                        ErrorChunkEntry(
+                            attempt=attempt,
+                            error_type="RuffLintError",
+                            module=task.affected_modules[0] if task.affected_modules else "*",
+                            action_taken=f"Ruff check failed: {ruff_output[:200]}",
+                        )
+                    )
+                    print(f"\n--- ATTEMPT {attempt} RUFF LINT FAILURE ---\n{ruff_output}\n----------------------------------\n", file=sys.stderr)
+
+                # --- Step 4: Mypy type execution ---
+                mypy_ok, mypy_output = run_mypy()
+                if not mypy_ok:
+                    error_chunk.add_entry(
+                        ErrorChunkEntry(
+                            attempt=attempt,
+                            error_type="MypyTypeError",
+                            module=task.affected_modules[0] if task.affected_modules else "*",
+                            action_taken=f"Mypy check failed: {mypy_output[:200]}",
+                        )
+                    )
+                    print(f"\n--- ATTEMPT {attempt} MYPY TYPE FAILURE ---\n{mypy_output}\n----------------------------------\n", file=sys.stderr)
+
+                # --- Step 5: pytest execution ---
+                pytest_ok, pytest_output = self._run_pytest()
+                if not pytest_ok:
+                    error_chunk.add_entry(
+                        ErrorChunkEntry(
+                            attempt=attempt,
+                            error_type=self._classify_error(pytest_output),
+                            module=self._error_module(pytest_output, task.affected_modules),
+                            action_taken="Pytest check failed, attempting repair",
+                        )
+                    )
+                    print(f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n", file=sys.stderr)
+
+                # Aggregate results
+                all_ok = import_ok and ruff_ok and mypy_ok and pytest_ok
+                if all_ok:
+                    # Success!
+                    git_diff = self._get_git_diff()
+                    self._update_reflection_log(task, error_chunk, success=True)
+                    
+                    result = {
+                        "status": "success",
+                        "retries": attempt,
+                        "error_chunk_summary": error_chunk,
+                        "help_request": None,
+                        "git_diff": git_diff,
+                        "patch_report": None,
+                        "adversarial_passed": None,
+                    }
+
+                    if run_adversarial:
+                        test_file = None
+                        try:
+                            from adversarial_tester import AdversarialTester
+                            tester = AdversarialTester()
+                            test_file, _ = tester.generate_edge_case_tests(task, git_diff, model=self.model)
+                            adv_ok, adv_output = tester.run_adversarial_tests(test_file)
+                            patch_report = tester.generate_patch_report(task, result, (adv_ok, adv_output))
+                            result["patch_report"] = patch_report
+                            result["adversarial_passed"] = adv_ok
+                        except Exception as e:
+                            result["patch_report"] = {"error": f"Adversarial audit failed: {e!s}"}
+                            result["adversarial_passed"] = False
+                        finally:
+                            if test_file and os.path.exists(test_file):
+                                try:
+                                    os.remove(test_file)
+                                except Exception:
+                                    pass
+
+                    return result
+
+                # Formulate combined error feedback log for Aider
+                error_log_parts = []
+                if not import_ok:
+                    error_log_parts.append(f"--- Import Validation Failures ---\n{import_err}")
+                if not ruff_ok:
+                    error_log_parts.append(f"--- Ruff Lint Failures ---\n{ruff_output}")
+                if not mypy_ok:
+                    error_log_parts.append(f"--- Mypy Type Failures ---\n{mypy_output}")
+                if not pytest_ok:
+                    error_log_parts.append(f"--- Pytest Failures ---\n{pytest_output}")
+
+                combined_error_log = "\n\n".join(error_log_parts)
+
+                # Escalation Policy checks
+                esc_result = self._check_escalation_policy(attempt, error_chunk, combined_error_log, prev_error_hash, task)
+                if esc_result is not None:
+                    # Escalation triggered
+                    git_diff = self._get_git_diff()
+                    self._git_rollback()
+                    return {
+                        "status": "escalated",
+                        "retries": attempt,
+                        "error_chunk_summary": error_chunk,
+                        "help_request": esc_result,
+                        "git_diff": git_diff,
+                    }
+
+                # Update prompt instructions with error details for next attempt
+                current_instructions = (
+                    f"The implementation verification failed. Please fix the code to make all checks (pytest, ruff lint, and mypy type checks) pass.\n"
+                    f"Note: If a constraint or constructor signature documented in `.ai-knowledge/` conflicts with the empirical runtime traceback (e.g. causes a TypeError or AttributeError), the runtime behavior takes absolute precedence. Real-world execution is the ground truth. Correct the code to match the actual Python behavior even if it violates the documented rule in `.ai-knowledge/`.\n\n"
+                    f"--- Failure Outputs ---\n{combined_error_log}"
                 )
-                # Gatekeeper failure → try next iteration
-                continue
 
-            # --- Step 3: pytest execution ---
-            pytest_ok, pytest_output = self._run_pytest()
-            if pytest_ok:
-                # Success!
-                git_diff = self._get_git_diff()
-                self._update_reflection_log(task, error_chunk, success=True)
-                
-                result = {
-                    "status": "success",
-                    "retries": attempt,
-                    "error_chunk_summary": error_chunk,
-                    "help_request": None,
-                    "git_diff": git_diff,
-                    "patch_report": None,
-                    "adversarial_passed": None,
-                }
+                prev_error_hash = _error_fingerprint(combined_error_log)
 
-                if run_adversarial:
-                    test_file = None
-                    try:
-                        from adversarial_tester import AdversarialTester
-                        tester = AdversarialTester()
-                        test_file, _ = tester.generate_edge_case_tests(task, git_diff, model=self.model)
-                        adv_ok, adv_output = tester.run_adversarial_tests(test_file)
-                        patch_report = tester.generate_patch_report(task, result, (adv_ok, adv_output))
-                        result["patch_report"] = patch_report
-                        result["adversarial_passed"] = adv_ok
-                    except Exception as e:
-                        result["patch_report"] = {"error": f"Adversarial audit failed: {e!s}"}
-                        result["adversarial_passed"] = False
-                    finally:
-                        if test_file and os.path.exists(test_file):
-                            try:
-                                os.remove(test_file)
-                            except Exception:
-                                pass
-
-                return result
-
-            # Print failure output for diagnostic visibility
-            print(f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n", file=sys.stderr)  # noqa: T201
-
-            # --- Failure handling ---
-            error_chunk.add_entry(
-                ErrorChunkEntry(
-                    attempt=attempt,
-                    error_type=self._classify_error(pytest_output),
-                    module=self._error_module(pytest_output, task.affected_modules),
-                    action_taken="pytest failed, attempting repair",
-                )
-            )
-
-            # Escalation Policy checks
-            esc_result = self._check_escalation_policy(attempt, error_chunk, pytest_output, prev_error_hash, task)
-            if esc_result is not None:
-                # Escalation triggered
-                git_diff = self._get_git_diff()
-                # Rollback on escalation
-                self._git_rollback()
-                return {
-                    "status": "escalated",
-                    "retries": attempt,
-                    "error_chunk_summary": error_chunk,
-                    "help_request": esc_result,
-                    "git_diff": git_diff,
-                }
-
-            prev_error_hash = _error_fingerprint(pytest_output)
+        finally:
+            self._cleanup_temp_message()
 
         # --- Loop exhausted without success ---
         self._git_rollback()
@@ -191,27 +270,6 @@ class WorkerAgent:
     # -------------------------------------------------------------------
     # Internal helpers
     # -------------------------------------------------------------------
-
-    def _build_aider_command(self, task: Any, plan: str, _rag_context: str) -> list[str]:
-        """Build the Aider CLI command from the task and plan."""
-        cmd = [
-            "aider",
-            "--yes",
-            "--no-git",
-        ]
-        if self.model:
-            cmd.extend(["--model", self.model])
-        # Add knowledge files if they exist
-        if os.path.exists(".ai-knowledge"):
-            for f in sorted(os.listdir(".ai-knowledge")):
-                fpath = os.path.join(".ai-knowledge", f)
-                if os.path.isfile(fpath) and f.endswith(".md"):
-                    cmd.extend(["--read", fpath])
-        # Use message file for plan
-        temp_msg = self._write_temp_message(plan)
-        cmd.extend(["--message-file", temp_msg])
-        cmd.extend(task.affected_modules)
-        return cmd
 
     def _write_temp_message(self, content: str) -> str:
         """Write plan to a temporary message file."""
@@ -231,6 +289,8 @@ class WorkerAgent:
 
     def _run_aider(self, cmd: list[str], _attempt: int, timeout: int = 600) -> tuple[bool, str]:
         """Execute Aider and return (success, message_or_output)."""
+        env = os.environ.copy()
+        env["AIDER_MAP_TOKENS"] = "0"
         try:
             res = subprocess.run(
                 cmd,
@@ -238,14 +298,13 @@ class WorkerAgent:
                 text=True,
                 stdin=subprocess.DEVNULL,
                 timeout=timeout,
+                env=env,
             )
             if res.returncode != 0:
                 return False, f"Aider failed with code {res.returncode}: {res.stderr[:500]}"
             return True, res.stdout
         except subprocess.TimeoutExpired:
             return False, f"Aider timed out after {timeout}s"
-        finally:
-            self._cleanup_temp_message()
 
     def _validate_imports(self) -> tuple[bool, str]:
         """AST gatekeeper: check imports against api_schema.yaml."""
@@ -407,18 +466,24 @@ class WorkerAgent:
         return None
 
     @staticmethod
-    def _classify_error(pytest_output: str) -> str:
-        """Extract error type from pytest output."""
+    def _classify_error(output: str) -> str:
+        """Extract error type from check output (supports Pytest, Ruff, Mypy)."""
+        if "Ruff Lint Failures" in output or "Ruff check failed" in output:
+            return "RuffLintError"
+        if "Mypy Type Failures" in output or "Mypy check failed" in output:
+            return "MypyTypeError"
+        if "ImportViolation" in output or "Unauthorized import" in output:
+            return "ImportViolation"
         import re
 
-        for line in pytest_output.splitlines():
+        for line in output.splitlines():
             # Match error type patterns: AssertionError, TypeError, ValueError, etc.
             m = re.search(r"(\w+(?:Error|Exception|Warning))", line)
             if m:
                 return m.group(1)
         # Fallback markers
         for marker in ["FAILED", "assert", "SyntaxError", "TypeError", "ValueError"]:
-            if marker in pytest_output:
+            if marker in output:
                 return marker
         return "UnknownError"
 
