@@ -12,7 +12,6 @@ from typing import Any
 
 # Import verification & setup from orchestrator
 from orchestrator import run_mypy, run_ruff, setup_ruff_mypy
-
 from schemas.task_schema import (
     ErrorChunkEntry,
     ErrorChunkSummary,
@@ -57,7 +56,7 @@ class WorkerAgent:
         self,
         task: Any,  # TaskSchema (avoid import-time circular issues with typing)
         plan: str,
-        rag_context: str = "",
+        _rag_context: str = "",
         run_adversarial: bool = True,
     ) -> dict[str, Any]:
         """
@@ -82,7 +81,7 @@ class WorkerAgent:
         try:
             setup_ruff_mypy()
         except Exception as e:
-            print(f"Failed to run setup_ruff_mypy: {e}", file=sys.stderr)
+            print(f"Failed to run setup_ruff_mypy: {e}", file=sys.stderr)  # noqa: T201
 
         error_chunk = ErrorChunkSummary(task_id=task.task_id)
         prev_error_hash: str | None = None
@@ -150,7 +149,7 @@ class WorkerAgent:
                             action_taken=f"Ruff check failed: {ruff_output[:200]}",
                         )
                     )
-                    print(f"\n--- ATTEMPT {attempt} RUFF LINT FAILURE ---\n{ruff_output}\n----------------------------------\n", file=sys.stderr)
+                    print(f"\n--- ATTEMPT {attempt} RUFF LINT FAILURE ---\n{ruff_output}\n----------------------------------\n", file=sys.stderr)  # noqa: T201
 
                 # --- Step 4: Mypy type execution ---
                 mypy_ok, mypy_output = run_mypy()
@@ -163,7 +162,7 @@ class WorkerAgent:
                             action_taken=f"Mypy check failed: {mypy_output[:200]}",
                         )
                     )
-                    print(f"\n--- ATTEMPT {attempt} MYPY TYPE FAILURE ---\n{mypy_output}\n----------------------------------\n", file=sys.stderr)
+                    print(f"\n--- ATTEMPT {attempt} MYPY TYPE FAILURE ---\n{mypy_output}\n----------------------------------\n", file=sys.stderr)  # noqa: T201
 
                 # --- Step 5: pytest execution ---
                 pytest_ok, pytest_output = self._run_pytest()
@@ -176,7 +175,7 @@ class WorkerAgent:
                             action_taken="Pytest check failed, attempting repair",
                         )
                     )
-                    print(f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n", file=sys.stderr)
+                    print(f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n", file=sys.stderr)  # noqa: T201
 
                 # Aggregate results
                 all_ok = import_ok and ruff_ok and mypy_ok and pytest_ok

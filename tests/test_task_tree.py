@@ -203,34 +203,28 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
             "affected_modules": ["src/a.py", "src/b.py", "src/c.py"],
             "assumptions_required": {}
         }
-        # Mock execute_verification_loop to run cleanly
+        # Mock execute_verification_loop to run cleanly using patch context managers
         import manager
         import worker
-        orig_evl = worker.WorkerAgent.execute_verification_loop
-        orig_triage = manager.ManagerAgent.triage
-        orig_validate = manager.ManagerAgent.validate_outcome
+        from unittest.mock import patch
 
-        worker.WorkerAgent.execute_verification_loop = MagicMock(returncode=0)
-        worker.WorkerAgent.execute_verification_loop.return_value = {
-            "status": "success",
-            "git_diff": "diff",
-            "error_chunk_summary": MagicMock(total_retries=0)
-        }
-        manager.ManagerAgent.triage = MagicMock()
-        manager.ManagerAgent.triage.return_value = ("ACCEPT", "plan")
-        manager.ManagerAgent.validate_outcome = MagicMock()
-        manager.ManagerAgent.validate_outcome.return_value = (True, "")
+        with patch.object(worker.WorkerAgent, "execute_verification_loop") as mock_evl, \
+             patch.object(manager.ManagerAgent, "triage") as mock_triage, \
+             patch.object(manager.ManagerAgent, "validate_outcome") as mock_validate:
+            
+            mock_evl.return_value = {
+                "status": "success",
+                "git_diff": "diff",
+                "error_chunk_summary": MagicMock(total_retries=0)
+            }
+            mock_triage.return_value = ("ACCEPT", "plan")
+            mock_validate.return_value = (True, "")
 
-        try:
             res = run_epic_task(epic_dict, max_workers=2)
             self.assertEqual(res["status"], "success")
             self.assertEqual(res["epic_task_id"], "T-20260623000000-111111")
             self.assertEqual(res["summary"]["total"], 4)  # Epic + 3 subtasks
             self.assertEqual(res["summary"]["success"], 4)
-        finally:
-            worker.WorkerAgent.execute_verification_loop = orig_evl
-            manager.ManagerAgent.triage = orig_triage
-            manager.ManagerAgent.validate_outcome = orig_validate
 
 
 if __name__ == "__main__":

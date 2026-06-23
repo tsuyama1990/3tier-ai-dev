@@ -121,9 +121,8 @@ def setup_ruff_mypy() -> None:
         except Exception as e:
             log(f"Failed to install via uv: {e}. Trying pip...")
             try:
-                pip_path = venv_dir / "bin" / "pip" if sys.platform != "win32" else venv_dir / "Scripts" / "pip.exe"
                 subprocess.run(
-                    [str(pip_path), "install", "ruff", "mypy"],
+                    [sys.executable, "-m", "pip", "install", "ruff", "mypy"],
                     capture_output=True,
                     text=True,
                     check=True
