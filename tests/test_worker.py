@@ -38,6 +38,16 @@ def worker() -> WorkerAgent:
     )
 
 
+@pytest.fixture(autouse=True)
+def mock_ruff_mypy() -> None:
+    with (
+        patch("worker.run_ruff", return_value=(True, "ruff ok")),
+        patch("worker.run_mypy", return_value=(True, "mypy ok")),
+        patch("worker.setup_ruff_mypy"),
+    ):
+        yield
+
+
 # ---------------------------------------------------------------------------
 # Verification Loop — Success path
 # ---------------------------------------------------------------------------
