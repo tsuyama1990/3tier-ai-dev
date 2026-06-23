@@ -4,21 +4,27 @@ line-length = 120
 
 [tool.ruff.lint]
 select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # Pyflakes
-    "I",    # isort
-    "UP",   # pyupgrade
-    "B",    # flake8-bugbear
-    "A",    # flake8-builtins
-    "C4",   # flake8-comprehensions
-    "T20",  # flake8-print
-    "RET",  # flake8-return
-    "SIM",  # flake8-simplify
-    "ARG",  # flake8-unused-arguments
-    "ERA",  # eradicate (dead code)
-    "PL",   # Pylint
-    "RUF",  # Ruff-specific rules
+    "E",
+    "W",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "A",
+    "C4",
+    "T20",
+    "RET",
+    "SIM",
+    "ARG",
+    "ERA",
+    "PL",
+    "RUF",
+    "C90",
+    "N",
+    "ANN",
+    "S",
+    "BLE",
+    "FBT",
 ]
 ignore = [
     "PLR0913", # Too many arguments in function definition
@@ -45,6 +51,7 @@ ignore = [
 "test_*" = ["T201", "PLC0415", "ARG002", "SIM117", "E501", "RUF059", "RUF001", "RUF002", "RUF003", "SIM105", "F841"]
 
 [tool.mypy]
+strict = true
 files = ["."]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true

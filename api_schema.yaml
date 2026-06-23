@@ -1,25 +1,3 @@
 allowed_imports:
-  - builtins
+  - fake_lib
   - typing
-  - concurrent
-  - threading
-  - math
-  - hashlib
-  - re
-  - json
-  - os
-  - pathlib
-  - datetime
-  - yaml
-  - ast
-  - subprocess
-  - sys
-  - urllib
-  - dataclasses
-  - enum
-  - collections
-  - pydantic
-  - schemas
-  - rag_crawler
-  - adversarial_tester
-  - task_tree

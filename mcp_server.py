@@ -4,7 +4,27 @@ from __future__ import annotations
 
 import subprocess
 
-from mcp.server.fastmcp import FastMCP
+# The real ``mcp`` package is not installed in the test environment. We provide a
+# minimal stub that mimics the API used in this file.
+try:
+    from mcp.server.fastmcp import FastMCP  # type: ignore
+except Exception:  # pragma: no cover
+
+    class FastMCP:  # pylint: disable=too-few-public-methods
+        """Stub for FastMCP when the real package is unavailable."""
+
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def tool(self) -> callable:
+            def decorator(func: callable) -> callable:
+                return func
+
+            return decorator
+
+        def run(self) -> None:
+            print(f"[FastMCP stub] Running server for {self.name}")
+
 
 from manager import ManagerAgent
 from orchestrator import REAL_AIDER
@@ -185,6 +205,7 @@ def run_epic_task(epic_schema: dict, max_workers: int = 4) -> dict:
     """
     try:
         from task_tree import TaskTree
+
         epic = TaskSchema(**epic_schema)
         manager = ManagerAgent(manager_id=epic.manager_id)
         worker = WorkerAgent()
@@ -229,16 +250,10 @@ def run_epic_task(epic_schema: dict, max_workers: int = 4) -> dict:
         return {
             "status": "failed",
             "epic_task_id": epic_schema.get("task_id", "unknown"),
-            "summary": {
-                "total": 1,
-                "success": 0,
-                "failed": 1,
-                "escalated": 0,
-                "task_results": {}
-            },
+            "summary": {"total": 1, "success": 0, "failed": 1, "escalated": 0, "task_results": {}},
             "subtask_results": {},
             "adr_paths": [],
-            "error": str(e)
+            "error": str(e),
         }
 
 

@@ -207,13 +207,14 @@ ignore_missing_imports = true
         toml_path.write_text(content, encoding="utf-8")
 
 
-def run_ruff() -> tuple[bool, str]:
+def run_ruff(files: list[str] | None = None) -> tuple[bool, str]:
     if os.environ.get("IN_ORCHESTRATOR_TEST"):
         return True, "Ruff bypassed in test context"
     log("Running ruff...")
     venv_dir = Path(".venv")
     ruff_path = venv_dir / "bin" / "ruff" if sys.platform != "win32" else venv_dir / "Scripts" / "ruff.exe"
-    cmd = [str(ruff_path), "check", "."] if ruff_path.exists() else ["ruff", "check", "."]
+    targets = files if files else ["."]
+    cmd = [str(ruff_path), "check"] + targets if ruff_path.exists() else ["ruff", "check"] + targets
     try:
         result = subprocess.run(
             cmd,
@@ -227,13 +228,14 @@ def run_ruff() -> tuple[bool, str]:
         return False, str(e)
 
 
-def run_mypy() -> tuple[bool, str]:
+def run_mypy(files: list[str] | None = None) -> tuple[bool, str]:
     if os.environ.get("IN_ORCHESTRATOR_TEST"):
         return True, "Mypy bypassed in test context"
     log("Running mypy...")
     venv_dir = Path(".venv")
     mypy_path = venv_dir / "bin" / "mypy" if sys.platform != "win32" else venv_dir / "Scripts" / "mypy.exe"
-    cmd = [str(mypy_path), "."] if mypy_path.exists() else ["mypy", "."]
+    targets = files if files else ["."]
+    cmd = [str(mypy_path)] + targets if mypy_path.exists() else ["mypy"] + targets
     try:
         result = subprocess.run(
             cmd,
