@@ -204,9 +204,10 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
             "assumptions_required": {}
         }
         # Mock execute_verification_loop to run cleanly using patch context managers
+        from unittest.mock import patch
+
         import manager
         import worker
-        from unittest.mock import patch
 
         with patch.object(worker.WorkerAgent, "execute_verification_loop") as mock_evl, \
              patch.object(manager.ManagerAgent, "triage") as mock_triage, \

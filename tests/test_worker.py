@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Generator
 from unittest.mock import patch
 
 import pytest
@@ -39,7 +40,7 @@ def worker() -> WorkerAgent:
 
 
 @pytest.fixture(autouse=True)
-def mock_ruff_mypy() -> None:
+def mock_ruff_mypy() -> Generator[None, None, None]:
     with (
         patch("worker.run_ruff", return_value=(True, "ruff ok")),
         patch("worker.run_mypy", return_value=(True, "mypy ok")),
