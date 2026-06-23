@@ -117,37 +117,65 @@ pytest -v --ignore=tests/step4_ollama_synthesizer/fixtures/
 
 ---
 
-## 7. MCP-Driven Development & Agent Workflow
+## 7. Organizational Design & Agent Workflow
 
-The platform leverages a **Manager-Worker (Tier 2 / Tier 3) Architecture** where development is outsourced to LLMs through MCP tools, rather than agents making direct file modifications.
+EKP-Forge is structured around a multi-tier **Manager-Worker Organizational Design** that enables autonomous development with strict validation constraints and self-healing.
 
-### 7.1 Concept
-1. **Director Agent (Antigravity/Client)**: Creates plans and constructs task schema inputs.
-2. **Manager Agent (`manager.py`)**: Triages tasks, validates constraints via RAG crawl of decisions, and performs LLM review.
-3. **Worker Agent (`worker.py`)**: Executes Aider self-healing loops to automatically fix test and import violations.
+```mermaid
+graph TD
+    Director["Client / Director Agent (e.g. Antigravity)"]
+    Manager["Manager Agent (manager.py)"]
+    RAG["Assumption RAG Crawler (rag_crawler.py)"]
+    Tree["Task Tree Executor (task_tree.py)"]
+    Worker["Worker Agent (worker.py)"]
+    Gatekeeper["AST Import Gatekeeper"]
+    Pytest["Pytest Runner"]
+    Ruff["Ruff Linter"]
+    Mypy["Mypy Type Checker"]
+    Adversarial["Adversarial Auditor (adversarial_tester.py)"]
 
-### 7.2 Configuration & Rules
-For agents (like Antigravity) to default to MCP execution:
-1. **Rule File (`.cursorrules`)**: Ensure `.cursorrules` is present in the workspace root to forbid direct codebase editing and mandate tool calls.
-2. **Config file (`mcp_config.json`)**: Configures the MCP server path and environment settings.
-3. **Run Script (`run-mcp.sh`)**: Sours local settings (like `OPENROUTER_API_KEY`) and starts the server.
-
-### 7.3 Executing MCP Tasks
-To request the AI agent to implement a feature, use the `run_managed_task` tool with a payload:
-
-```json
-{
-  "task_id": "T-20260623001000-a1b2c3",
-  "manager_id": "MGR-Auth-01",
-  "goal": "Implement JWT validation middleware",
-  "constraints": ["No external libraries outside api_schema.yaml"],
-  "acceptance_tests": ["Valid token passes", "Expired token returns 401"],
-  "affected_modules": ["src/middleware/auth.py"],
-  "assumptions_required": {"api_schema_version": "v1.2"}
-}
+    Director -->|Task Schema / Epic| Manager
+    Manager -->|Verify Assumptions| RAG
+    Manager -->|Parallelize Subtasks| Tree
+    Tree -->|Dispatch Subtask| Worker
+    Worker -->|1. Run Aider| Worker
+    Worker -->|2. Check Imports| Gatekeeper
+    Worker -->|3. Run Linter| Ruff
+    Worker -->|4. Run Type Checker| Mypy
+    Worker -->|5. Run Unit Tests| Pytest
+    Worker -->|Auto-Heal on Failures| Worker
+    Worker -->|6. Edge Case Audit| Adversarial
+    Worker -->|Commit Staged Diff| Manager
 ```
 
-For epic tasks, use `run_epic_task` to decompose and execute in parallel:
-```bash
-# Call run_epic_task tool on the EKP-Forge MCP server
-```
+### 7.1 Agent Roles & Responsibilities
+
+1. **Director Agent (Client/Antigravity)**
+   - Responsible for high-level goal mapping, architectural plans, and epic/task schema construction.
+2. **Manager Agent (`manager.py`)**
+   - **Triage**: Compares task assumptions against existing ADRs using the **Assumption RAG Crawler**; rejects tasks if key-value or logical conflicts are detected.
+   - **Decomposition**: Decomposes large Epic tasks into parallelizable subtasks by analyzing module dependencies (if modules $\ge 3$) or constraint size (if constraints $\ge 5$).
+   - **Validation**: Inspects Worker results and ADR records to decide whether to accept or escalate outcomes.
+3. **Worker Agent (`worker.py` / `orchestrator_api.py`)**
+   - **Aider Self-Repairing Loop**: Runs Aider with LLM (local Ollama/Qwen or API-based Claude/GPT) to implement code modifications.
+   - **Verification Pipeline**: Runs a strict verification checklist before committing code changes:
+     - *AST Import Gatekeeper*: Validates imports against `api_schema.yaml`.
+     - *Ruff*: Enforces code formatting and stylistic guidelines (e.g. McCabe, naming rules).
+     - *Mypy*: Verifies types strictly (`strict = true`).
+     - *Pytest*: Verifies code satisfies test specifications.
+   - **Aggregated Auto-Healing**: If any compiler, linter, or test failures occur, the error messages are aggregated and fed back to Aider. The cycle repeats up to `max_retries` before triggering safety rollbacks and escalation.
+
+### 7.2 Core Modules & Support Engines
+
+- **Task Tree Executor (`task_tree.py`)**: A thread-safe parallel executor that dynamically schedules, coordinates, and executes subtasks within a dependency tree.
+- **Assumption RAG Crawler (`rag_crawler.py`)**: Uses a lightweight TF-IDF and Cosine Similarity engine to perform semantic queries on markdown ADR logs in `decisions/`.
+- **Adversarial Tester (`adversarial_tester.py`)**: Automatically drafts edge-case verification tests targeting modifications, runs those tests, and constructs a quality audit scorecard (Patch Report).
+
+---
+
+## 8. Ruff & Mypy Auto-Healing (Phase E)
+
+The platform includes a deterministic mechanism to auto-install, strictly configure, and auto-heal static analysis and styling issues.
+
+- **Dynamic Setup (`setup_ruff_mypy` in `orchestrator.py`)**: At startup, the orchestrator/worker checks for `ruff` and `mypy` installations, installing them via `uv` or `sys.executable -m pip` if missing, and appending strict options directly to `pyproject.toml`.
+- **Feedback & Repair Loop**: Linting/typing logs are treated as first-class traceback signals alongside test outputs, which are automatically parsed and resolved by the self-healing engine.
