@@ -1,6 +1,5 @@
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 from ekp_forge import orchestrator
@@ -47,9 +46,9 @@ def run_3tier_dev(
         # Acquire lock
         lock_file.write_text(f"locked by run_3tier_dev process {os.getpid()}")
 
-        from ekp_forge.sandbox.workspace import SandboxWorkspace
         from ekp_forge.sandbox.cloner import clone_into
         from ekp_forge.sandbox.integrator import integrate_changes
+        from ekp_forge.sandbox.workspace import SandboxWorkspace
 
         with SandboxWorkspace() as ws_path:
             clone_ok, clone_err = clone_into(ws_path)
@@ -130,7 +129,7 @@ def run_3tier_dev(
                     orchestrator.run_cleanup()
                     orchestrator.cleanup_files()
                     import_success, import_err = orchestrator.validate_imports()
-                    
+
                     test_log_parts = []
                     if not import_success:
                         success = False
@@ -143,16 +142,16 @@ def run_3tier_dev(
                         pytest_success, pytest_log = orchestrator.run_tests()
                         ruff_success, ruff_log = orchestrator.run_ruff(changed_files)
                         mypy_success, mypy_log = orchestrator.run_mypy(changed_files)
-                        
+
                         success = pytest_success and ruff_success and mypy_success
-                        
+
                         if not pytest_success:
                             test_log_parts.append(f"--- Pytest Failures ---\n{pytest_log}")
                         if not ruff_success:
                             test_log_parts.append(f"--- Ruff Lint Failures ---\n{ruff_log}")
                         if not mypy_success:
                             test_log_parts.append(f"--- Mypy Type Failures ---\n{mypy_log}")
-                    
+
                     test_log = "\n\n".join(test_log_parts)
 
                     if success:
@@ -192,7 +191,7 @@ def run_3tier_dev(
                     orchestrator.run_cleanup()
                     orchestrator.cleanup_files()
                     import_success, import_err = orchestrator.validate_imports()
-                    
+
                     test_log_parts = []
                     if not import_success:
                         success = False
@@ -205,16 +204,16 @@ def run_3tier_dev(
                         pytest_success, pytest_log = orchestrator.run_tests()
                         ruff_success, ruff_log = orchestrator.run_ruff(changed_files)
                         mypy_success, mypy_log = orchestrator.run_mypy(changed_files)
-                        
+
                         success = pytest_success and ruff_success and mypy_success
-                        
+
                         if not pytest_success:
                             test_log_parts.append(f"--- Pytest Failures ---\n{pytest_log}")
                         if not ruff_success:
                             test_log_parts.append(f"--- Ruff Lint Failures ---\n{ruff_log}")
                         if not mypy_success:
                             test_log_parts.append(f"--- Mypy Type Failures ---\n{mypy_log}")
-                    
+
                     test_log = "\n\n".join(test_log_parts)
 
                     if success:

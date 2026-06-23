@@ -127,7 +127,7 @@ class AssumptionRAGCrawler:
                 mod_base = Path(module_name).name.lower()
                 if mod_lower in full_content or mod_base in full_content:
                     boost *= 1.5
-            
+
             score *= boost
 
             results.append({

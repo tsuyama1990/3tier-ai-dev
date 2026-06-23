@@ -4,10 +4,9 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Tuple
 
 
-def integrate_changes(project_root: Path, sandbox_path: Path | None = None) -> Tuple[bool, str]:
+def integrate_changes(project_root: Path, sandbox_path: Path | None = None) -> tuple[bool, str]:
     """Identify modified/new files in sandbox repo and copy them back to project_root."""
     root = Path(project_root).resolve()
     sandbox_repo = Path(sandbox_path) / "repo" if sandbox_path else root / "repo"

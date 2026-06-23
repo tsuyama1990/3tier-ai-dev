@@ -104,7 +104,7 @@ Do NOT write any explanation outside the code block.
     ) -> dict[str, Any]:
         """Generate the Patch Quality Report."""
         retries = worker_result.get("retries", 1)
-        
+
         # Parse error_chunk_summary
         from ekp_forge.schemas.task_schema import ErrorChunkSummary
         summary_dict = worker_result.get("error_chunk_summary", {})

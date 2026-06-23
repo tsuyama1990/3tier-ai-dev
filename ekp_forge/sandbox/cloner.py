@@ -4,12 +4,11 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Tuple
 
 from .constraints import is_path_allowed
 
 
-def clone_into(sandbox_path: Path, project_root: Path | None = None) -> Tuple[bool, str]:
+def clone_into(sandbox_path: Path, project_root: Path | None = None) -> tuple[bool, str]:
     """Clone or copy allowed files from project root into sandbox_path/repo."""
     dst_repo = sandbox_path / "repo"
     dst_repo.mkdir(parents=True, exist_ok=True)

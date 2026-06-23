@@ -152,7 +152,7 @@ ignore_missing_imports = true
             elif mypy_idx != -1 and line_s.startswith("[") and line_s.endswith("]"):
                 next_sec_idx = idx
                 break
-        
+
         section_lines = lines[mypy_idx:next_sec_idx] if next_sec_idx != -1 else lines[mypy_idx:]
         has_strict = any(line.strip().replace(" ", "") == "strict=true" for line in section_lines)
         if not has_strict:
@@ -220,7 +220,7 @@ def run_mypy(files: list[str] | None = None) -> tuple[bool, str]:
     log("Running mypy...")
     venv_dir = Path(".venv")
     mypy_path = venv_dir / "bin" / "mypy" if sys.platform != "win32" else venv_dir / "Scripts" / "mypy.exe"
-    
+
     # Always run mypy on the entire project to ensure consistency across imports/exports
     cmd = [str(mypy_path), "."] if mypy_path.exists() else ["mypy", "."]
     try:
@@ -230,7 +230,7 @@ def run_mypy(files: list[str] | None = None) -> tuple[bool, str]:
             text=True
         )
         output = result.stdout + result.stderr
-        
+
         # If files list is specified, filter output error lines to target paths of the changed files
         if files:
             filtered_lines = []
@@ -240,11 +240,11 @@ def run_mypy(files: list[str] | None = None) -> tuple[bool, str]:
                     if clean_path in line.replace("\\", "/"):
                         filtered_lines.append(line)
                         break
-            
+
             if not filtered_lines:
                 return True, "Mypy passed on target files (other errors ignored)"
             return False, "\n".join(filtered_lines)
-            
+
         log(f"Mypy exit code: {result.returncode}")
         return result.returncode == 0, output
     except Exception as e:

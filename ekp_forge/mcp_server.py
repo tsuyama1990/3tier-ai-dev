@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import subprocess
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # The real ``mcp`` package is not installed in the test environment. We provide a
 # minimal stub that mimics the API used in this file.

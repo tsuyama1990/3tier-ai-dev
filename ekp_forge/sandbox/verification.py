@@ -9,13 +9,13 @@ restore the original cwd.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Tuple, Callable
 
-from ekp_forge.orchestrator import run_ruff, run_mypy
+from ekp_forge.orchestrator import run_mypy, run_ruff
 
 
-def _run_in_workspace(workspace: Path, func: Callable[[], Tuple[bool, str]]) -> Tuple[bool, str]:
+def _run_in_workspace(workspace: Path, func: Callable[[], tuple[bool, str]]) -> tuple[bool, str]:
     """Execute *func* with ``cwd`` set to *workspace*.
 
     The original working directory is restored afterwards, even if *func*
@@ -29,7 +29,7 @@ def _run_in_workspace(workspace: Path, func: Callable[[], Tuple[bool, str]]) -> 
         os.chdir(original_cwd)
 
 
-def verify_workspace(workspace: Path) -> Tuple[bool, str]:
+def verify_workspace(workspace: Path) -> tuple[bool, str]:
     """Run Ruff and MyPy inside *workspace* and return a combined result.
 
     The function short‑circuits on the first failure, returning ``False`` and

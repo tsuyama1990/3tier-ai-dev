@@ -74,9 +74,9 @@ class WorkerAgent:
                 "adversarial_passed": bool | None,
             }
         """
-        from ekp_forge.schemas.task_schema import TaskSchema  # local import
-        from ekp_forge.sandbox.workspace import SandboxWorkspace
         from ekp_forge.sandbox.cloner import clone_into
+        from ekp_forge.sandbox.workspace import SandboxWorkspace
+        from ekp_forge.schemas.task_schema import TaskSchema  # local import
 
         assert isinstance(task, TaskSchema), "task must be a TaskSchema instance"
 
@@ -206,7 +206,7 @@ class WorkerAgent:
                             # Success!
                             git_diff = self._get_git_diff()
                             self._update_reflection_log(task, error_chunk, success=True)
-                            
+
                             result = {
                                 "status": "success",
                                 "retries": attempt,
@@ -427,7 +427,7 @@ class WorkerAgent:
                 if re.search(pat, line):
                     is_important = True
                     break
-            
+
             if is_important:
                 # Add context around the line
                 start = max(0, idx - 1)
@@ -444,7 +444,7 @@ class WorkerAgent:
         compressed = "\n".join(important_lines)
         if len(compressed) > 1500:
             compressed = compressed[:1500] + "\n... [Truncated due to length constraints] ..."
-        
+
         return compressed
 
     def _get_git_diff(self) -> str:

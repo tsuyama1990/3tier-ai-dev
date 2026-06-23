@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Tuple
+from typing import Any
 
 _BACKUP_SUFFIX = ".safe_factory.bak"
 
 
-def backup_config(config_path: Path) -> Tuple[bool, str]:
+def backup_config(config_path: Path) -> tuple[bool, str]:
     """Create a backup of *config_path*.
 
     Returns ``(True, backup_path)`` on success. If the file does not exist, the
@@ -34,7 +34,7 @@ def backup_config(config_path: Path) -> Tuple[bool, str]:
         return False, f"Backup failed: {exc}"
 
 
-def restore_config(config_path: Path) -> Tuple[bool, str]:
+def restore_config(config_path: Path) -> tuple[bool, str]:
     """Restore a previously backed‑up configuration file.
 
     The function looks for a file with the ``_BACKUP_SUFFIX``. If found, it
@@ -54,9 +54,8 @@ def restore_config(config_path: Path) -> Tuple[bool, str]:
 
 def serialize_toml(data: dict) -> str:
     """Recursive TOML serializer supporting dict values as tables."""
-    from typing import Any
     import json
-    
+
     def val_to_toml(v: Any) -> str:
         if isinstance(v, bool):
             return "true" if v else "false"
@@ -86,7 +85,7 @@ def serialize_toml(data: dict) -> str:
         if isinstance(v, dict):
             lines.append(f"\n[{k}]")
             lines.extend(serialize_section(v, k))
-            
+
     # Clean up empty lines / spacing
     output = []
     prev_was_empty = False
@@ -98,16 +97,15 @@ def serialize_toml(data: dict) -> str:
         else:
             output.append(line)
             prev_was_empty = False
-            
+
     return "\n".join(output)
 
 
 def apply_config_changes(config_path: Path, requests: list[Any]) -> bool:
     """Apply config change requests to TOML at config_path.
-    
+
     Uses tomllib to load and parse, applies updates recursively, and writes back using serialize_toml.
     """
-    from typing import Any
     if not config_path.is_file():
         return False
 

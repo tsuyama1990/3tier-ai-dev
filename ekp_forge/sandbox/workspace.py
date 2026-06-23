@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List
 
 from .constraints import is_path_allowed
 
@@ -34,7 +34,7 @@ class SandboxWorkspace:
     def __init__(self, root: Path | None = None, whitelist: Iterable[Path] | None = None):
         self.root = Path(root or Path.cwd()).resolve()
         self._temp_dir: Path | None = None
-        self.whitelist: List[Path] = []
+        self.whitelist: list[Path] = []
         if whitelist is None:
             # Default whitelist – copy everything that is not explicitly excluded
             # by :func:`sandbox.constraints.is_path_allowed`.
@@ -54,7 +54,7 @@ class SandboxWorkspace:
 
     def __exit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object | None
-    ) -> None:  # noqa: D401
+    ) -> None:
         """Remove the temporary directory regardless of success or failure."""
         if self._temp_dir and self._temp_dir.exists():
             shutil.rmtree(self._temp_dir, ignore_errors=True)
