@@ -88,11 +88,11 @@ class TestOrchestratorAPI(unittest.TestCase):
             with patch("pathlib.Path.exists", return_value=True):
                 run_3tier_dev("prompt", "ase", ["dummy.py"])
 
-    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.exists", autospec=True)
     def test_fails_fast_if_knowledge_missing(self, mock_exists):
         """知識(Knowledge)が存在しない場合、Aiderを起動せずに即時エラーを返すこと"""
-        # mock exists() to return True for pyproject.toml to prevent setup_ruff_mypy overwriting it
-        mock_exists.side_effect = lambda *args, **kwargs: any("pyproject.toml" in str(arg) for arg in args)
+        # mock exists() to return True for pyproject.toml, ruff, mypy to prevent setup_ruff_mypy overwriting/installing
+        mock_exists.side_effect = lambda self, *args, **kwargs: any(p in str(self) for p in ["pyproject.toml", "ruff", "mypy"])
 
         result = run_3tier_dev("prompt", "unknown_pkg", ["dummy.py"])
 
