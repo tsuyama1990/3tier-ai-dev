@@ -146,6 +146,66 @@ class AgentScorecard(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 7. Challenge Agent Budget & Architect Approval Schemas (v4.1)
+# ---------------------------------------------------------------------------
+
+
+class ChallengeObjection(BaseModel):
+    """A single objection raised by the Challenge Agent."""
+
+    objection_id: int
+    category: str  # "over_engineering", "missing_assumption", "redundant_feature"
+    description: str
+    alternative_proposal: str  # MANDATORY — cannot object without proposing alternative
+
+
+class ChallengeResult(BaseModel):
+    """Structured output of the Challenge Agent with budget constraints."""
+
+    task_id: str
+    objections: list[ChallengeObjection] = Field(default_factory=list)
+    max_objections: int = 3  # Hard cap — enforced in code
+    blocked: bool = False
+    force_bypass_applied: bool = False
+
+    def add_objection(self, objection: ChallengeObjection) -> bool:
+        """Add an objection if under the max_objections cap. Returns True if added."""
+        if len(self.objections) >= self.max_objections:
+            return False
+        if not objection.alternative_proposal.strip():
+            raise ValueError(f"Objection {objection.objection_id} missing alternative_proposal")
+        self.objections.append(objection)
+        return True
+
+
+class AdrComplianceResult(BaseModel):
+    """Output of Architect's ADR compliance check on a Task Planner output."""
+
+    task_id: str
+    compliant: bool = True
+    violated_adrs: list[str] = Field(default_factory=list)
+    violation_reasons: list[str] = Field(default_factory=list)
+    requires_regeneration: bool = False
+
+
+# ---------------------------------------------------------------------------
+# 8. Success Pattern Schema (v4.1 — Knowledge Manager Upgrade)
+# ---------------------------------------------------------------------------
+
+
+class SuccessPattern(BaseModel):
+    """A verified, integrated change that can be reused as a template."""
+
+    pattern_id: str
+    task_goal: str
+    adr_file: str  # Reference to the ADR that authorized this
+    unified_diff: str
+    affected_modules: list[str]
+    constraint_keywords: list[str]  # For semantic search
+    timestamp: str
+
+
+# ---------------------------------------------------------------------------
 # 6. Utility functions
 # ---------------------------------------------------------------------------
 

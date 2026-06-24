@@ -346,12 +346,13 @@ class TestStaticValidation:
 
 class TestChallengeAndArchitectChecks:
     def test_challenge_agent_overengineering_detected(self, manager: ManagerAgent, valid_task: TaskSchema) -> None:
-        """過剰エンジニアリング(redisなど)を検出して REJECT すること"""
+        """過剰エンジニアリング(redisなど)を検出して警告を記録すること (警告はブロッカーではない)"""
         valid_task.goal = "Implement redis caching for user profiles"
         status, reason = manager.triage(valid_task)
-        assert status == "REJECT"
-        assert "Challenge Agent" in reason
-        assert "redis" in reason
+        assert status == "ACCEPT"
+        assert manager._last_challenge_result is not None
+        assert len(manager._last_challenge_result.objections) > 0
+        assert any("redis" in obj.description for obj in manager._last_challenge_result.objections)
 
     def test_challenge_agent_bypass_route(self, manager: ManagerAgent, valid_task: TaskSchema) -> None:
         """bypass_challenge_agent または force_accept が真の場合、ACCEPT となること"""

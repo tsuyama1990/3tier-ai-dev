@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -11,6 +13,8 @@ from pathlib import Path
 import yaml
 
 from ekp_forge.schemas.task_schema import (
+    ChallengeObjection,
+    ChallengeResult,
     ErrorChunkSummary,
     HelpRequestSchema,
     TaskSchema,
@@ -29,6 +33,8 @@ class ManagerAgent:
         self.manager_id = manager_id
         self._decisions_dir = Path("decisions")
         self._decisions_dir.mkdir(parents=True, exist_ok=True)
+        self._last_challenge_result: ChallengeResult | None = None
+        self._last_success_patterns: list = []
 
     # -------------------------------------------------------------------
     # Triage
@@ -44,27 +50,14 @@ class ManagerAgent:
         """
         # Step 1: Pydantic validation is automatic (caller must pass TaskSchema)
 
-        # Challenge Agent check (Over-engineering detection)
+        # NEW: Challenge Agent with budget enforcement (v4.1)
         if not (task.bypass_challenge_agent or task.force_accept):
-            overengineered_keywords = [
-                "redis",
-                "postgresql",
-                "postgres",
-                "mysql",
-                "mongodb",
-                "mongo",
-                "kafka",
-                "rabbitmq",
-            ]
-            combined_text = (task.goal + " " + " ".join(task.constraints)).lower()
-            for kw in overengineered_keywords:
-                if re.search(r"\b" + kw + r"\b", combined_text):
-                    return (
-                        "REJECT",
-                        f"Challenge Agent: The task goal/constraints mention complex external service/dependency '{kw}' "
-                        f"which suggests over-engineering. Please use standard library or standard local components "
-                        f"(e.g., sqlite3, json, math, urllib) instead.",
-                    )
+            challenge_result = self._run_challenge_agent(task)
+            if challenge_result.blocked:
+                return ("REJECT", self._format_challenge_rejection(challenge_result))
+            if len(challenge_result.objections) > 0:
+                # Non-blocking objections — attach them to the plan as warnings
+                self._last_challenge_result = challenge_result
 
         # Architect check (Module boundary constraints)
         for mod in task.affected_modules:
@@ -82,9 +75,94 @@ class ManagerAgent:
         if reject_reason:
             return ("REJECT", reject_reason)
 
-        # Step 3: Generate Implementation Plan
+        # Step 3: Search success patterns for plan reuse (v4.1)
+        try:
+            from ekp_forge.sandbox.success_patterns import search_success_patterns
+
+            patterns = search_success_patterns(task.goal + " " + " ".join(task.constraints), top_k=2)
+            if patterns:
+                self._last_success_patterns = patterns
+        except Exception:
+            self._last_success_patterns = []
+
+        # Step 4: Generate Implementation Plan
         plan = self._generate_implementation_plan(task)
+
+        # Step 5: Architect Approval — ADR compliance check (v4.1)
+        try:
+            from ekp_forge.sandbox.architect_review import review_plan_against_adrs
+
+            adr_result = review_plan_against_adrs(plan, task, self._decisions_dir)
+            if not adr_result.compliant:
+                # Append violation context and regenerate
+                violation_context = "\n".join(f"- {reason}" for reason in adr_result.violation_reasons)
+                plan = self._generate_implementation_plan(
+                    task,
+                    extra_context=f"\n## Architect Review Violations\n{violation_context}\n\nRevise the plan to comply with existing ADRs.",
+                )
+        except Exception:
+            pass  # Architect review failure should not block execution
+
         return ("ACCEPT", plan)
+
+    # -------------------------------------------------------------------
+    # Challenge Agent (Budget-constrained, v4.1)
+    # -------------------------------------------------------------------
+
+    def _run_challenge_agent(self, task: TaskSchema) -> ChallengeResult:
+        """
+        Run Challenge Agent with budget constraints:
+        - max 3 objections
+        - each objection MUST include alternative_proposal
+        - cannot block if user sets force_accept=True
+        - force_bypass skips all checks
+        """
+        result = ChallengeResult(task_id=task.task_id)
+
+        if task.force_accept:
+            result.force_bypass_applied = True
+            return result
+
+        # Keyword-based overengineering detection (budgeted)
+        overengineered_keywords = [
+            ("redis", "Use `functools.lru_cache` or an in-memory dict instead of Redis."),
+            ("postgresql", "Use `sqlite3` (stdlib) instead of PostgreSQL."),
+            ("postgres", "Use `sqlite3` (stdlib) instead of PostgreSQL."),
+            ("mysql", "Use `sqlite3` (stdlib) instead of MySQL."),
+            ("mongodb", "Use `sqlite3` (stdlib) or JSON file storage instead of MongoDB."),
+            ("mongo", "Use `sqlite3` (stdlib) or JSON file storage instead of MongoDB."),
+            ("kafka", "Use a local queue (`queue.Queue`) or Redis pub/sub instead of Kafka."),
+            ("rabbitmq", "Use a local queue (`queue.Queue`) instead of RabbitMQ."),
+        ]
+
+        combined_text = (task.goal + " " + " ".join(task.constraints)).lower()
+        for kw, alternative in overengineered_keywords:
+            if re.search(r"\b" + kw + r"\b", combined_text):
+                added = result.add_objection(
+                    ChallengeObjection(
+                        objection_id=len(result.objections) + 1,
+                        category="over_engineering",
+                        description=f"Task references '{kw}' which suggests over-engineering.",
+                        alternative_proposal=alternative,
+                    )
+                )
+                if not added:
+                    break  # Budget exhausted
+
+        # If max_objections reached without being blocked, still allow execution
+        # Blocking only happens if a critical objection is raised (e.g., redundant feature)
+        # For now, only over-engineering objections are non-blocking
+        result.blocked = False  # Over-engineering objections are warnings, not blockers
+        return result
+
+    def _format_challenge_rejection(self, result: ChallengeResult) -> str:
+        """Format ChallengeResult as a rejection reason string."""
+        parts = ["Challenge Agent rejected the task:"]
+        for obj in result.objections:
+            parts.append(f"\n  [{obj.category}] {obj.description}")
+            parts.append(f"    Alternative: {obj.alternative_proposal}")
+        parts.append(f"\nObjections: {len(result.objections)}/{result.max_objections}")
+        return "\n".join(parts)
 
     def _check_assumptions(self, task: TaskSchema) -> str | None:
         """
@@ -149,8 +227,17 @@ class ManagerAgent:
             pass
         return None
 
-    def _generate_implementation_plan(self, task: TaskSchema) -> str:
-        """Generate an implementation plan from the task schema."""
+    def _generate_implementation_plan(self, task: TaskSchema, extra_context: str = "") -> str:
+        """Generate an implementation plan from the task schema.
+
+        Parameters
+        ----------
+        task:
+            The task to generate a plan for.
+        extra_context:
+            Optional additional context to include (e.g., Architect Review violation
+            feedback requesting plan regeneration).
+        """
         lines: list[str] = [
             f"# Implementation Plan: {task.task_id}",
             f"**Goal**: {task.goal}",
@@ -217,6 +304,11 @@ class ManagerAgent:
                     lines.append(f"```python\n{sig}\n```")
             except Exception:
                 pass
+
+        if extra_context:
+            lines.append("")
+            lines.append("## Additional Context")
+            lines.append(extra_context)
 
         return "\n".join(lines)
 

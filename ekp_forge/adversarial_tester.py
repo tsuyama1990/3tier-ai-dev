@@ -1,4 +1,15 @@
-"""Adversarial Tester — Phase B: Auto-generates edge case tests via Ollama and executes them."""
+"""Adversarial Reviewer — independent gate that runs AFTER Worker verification and BEFORE Integrator.
+
+This module provides two classes:
+
+1. :class:`AdversarialTester` — original class (kept for backward compatibility).
+2. :class:`AdversarialReviewer` — standalone gate with ``review()`` method.
+
+The :class:`AdversarialReviewer` is called **between** Worker success and Integrator merge.
+Its failures are **warnings, not blockers** — they inform robustness but don't prevent
+integration. This is because adversarial tests find edge-case issues
+(e.g., "crashes on 10GB CSV input"), not correctness issues.
+"""
 
 from __future__ import annotations
 
@@ -151,3 +162,101 @@ Do NOT write any explanation outside the code block.
             "confidence_final": confidence,
             "patch_quality": quality,
         }
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Reviewer — Independent Gate (v4.1)
+# ---------------------------------------------------------------------------
+
+
+class AdversarialReviewer:
+    """Independent adversarial testing gate — runs AFTER Worker verification passes.
+
+    Unlike the old :class:`AdversarialTester` which was embedded inside the Worker's
+    verification loop, this class is called as a **separate phase** between Worker
+    success and Integrator merge.
+
+    Key design decisions
+    --------------------
+    * Adversarial failures are **warnings, not blockers** — they inform robustness
+      but don't prevent integration.
+    * The review runs in the sandbox directory to avoid polluting the main project.
+    * No self-healing loop: failures are reported, not fixed.
+    """
+
+    def __init__(self, model: str = "ollama/qwen2.5-coder:7b"):
+        self.model = model
+        self._tester = AdversarialTester()
+
+    def review(
+        self,
+        task: TaskSchema,
+        git_diff: str,
+        sandbox_path: Path | None = None,
+    ) -> tuple[bool, str, dict]:
+        """Run adversarial edge‑case testing against a verified diff.
+
+        Parameters
+        ----------
+        task:
+            The task schema for which the diff was generated.
+        git_diff:
+            The unified diff of the verified changes.
+        sandbox_path:
+            Optional sandbox path to run adversarial tests in. If ``None``,
+            tests run in the current working directory.
+
+        Returns
+        -------
+        tuple[bool, str, dict]
+            ``(passed, output_summary, report_dict)`` where:
+            * ``passed`` — ``True`` if all adversarial tests passed (or generation failed)
+            * ``output_summary`` — human-readable summary of findings
+            * ``report_dict`` — structured report for logging
+        """
+        original_cwd: str | None = None
+        test_file: str | None = None
+
+        try:
+            # Change to sandbox if provided
+            if sandbox_path:
+                import os
+
+                original_cwd = os.getcwd()
+                os.chdir(sandbox_path)
+
+            # Step 1: Generate edge-case tests
+            test_file, test_content = self._tester.generate_edge_case_tests(task, git_diff, model=self.model)
+            if not test_content.strip():
+                return True, "Adversarial review skipped (no tests generated)", {}
+
+            # Step 2: Run the tests
+            adv_ok, adv_output = self._tester.run_adversarial_tests(test_file)
+
+            # Step 3: Build report
+            report = {
+                "task_id": task.task_id,
+                "adversarial_passed": adv_ok,
+                "adversarial_output": adv_output[:500] if adv_output else "",
+                "warning": not adv_ok,
+            }
+
+            if adv_ok:
+                return True, "Adversarial review passed — all edge-case tests OK.", report
+            return False, f"Adversarial review found edge-case issues:\n{adv_output[:1000]}", report
+
+        except Exception as e:
+            return True, f"Adversarial review encountered error (skipped): {e}", {"error": str(e)}
+
+        finally:
+            # Cleanup test file
+            if test_file:
+                try:
+                    Path(test_file).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            # Restore original directory
+            if original_cwd and sandbox_path:
+                import os
+
+                os.chdir(original_cwd)

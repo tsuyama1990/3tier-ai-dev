@@ -2,20 +2,23 @@
 
 本ドキュメントでは、Executable Knowledge Platform (EKP) / Dependency Semantic Compiler (DSC) の詳細な接続構成、環境設定、微調整、および運用手順について解説します。
 
+より包括的なプロジェクト概要については [`README.md`](../README.md) を参照してください。
+
 ---
 
 ## 1. MCP (Model Context Protocol) の設定方法
 
-DSCのオーケストレータは、Aider やその他のエージェントから MCP を通じて呼び出すことが可能です。
+EKP-Forge は MCP サーバーとして [`ekp_forge/mcp_server.py`](../ekp_forge/mcp_server.py) を提供しており、Aider や Claude Desktop などの AI エージェントから呼び出すことが可能です。
 
 ### 1.1. 設定ファイル (`mcp_config.json`)
-MCPサーバーを認識させるため、プロジェクトルートに `mcp_config.json` を配置します。
+MCPサーバーを認識させるため、プロジェクトルートに [`mcp_config.json`](../mcp_config.json) を配置します。
 
 ```json
 {
   "mcpServers": {
     "aider-orchestrator": {
-      "command": "/home/tomo/project/000_devenv/3tier_ai_devs/run-mcp.sh",
+      "command": "/home/tomo/project/000_devenv/ekp-forge/run-mcp.sh",
+      "args": [],
       "env": {
         "OLLAMA_HOST": "http://127.0.0.1:11434"
       }
@@ -25,14 +28,14 @@ MCPサーバーを認識させるため、プロジェクトルートに `mcp_co
 ```
 
 ### 1.2. ラッパースクリプト (`run-mcp.sh`)
-本スクリプトは、MCP経由でのAiderオーケストレーション起動を安全に行うためのラッパーです。
+本スクリプトは、MCP経由でのEKP-Forgeオーケストレーション起動を安全に行うためのラッパーです。
 
 ```bash
 #!/bin/bash
 # run-mcp.sh
-cd /home/tomo/project/000_devenv/3tier_ai_devs
+cd /home/tomo/project/000_devenv/ekp-forge
 source .venv/bin/activate
-exec python3 orchestrator.py "$@"
+exec python3 -m ekp_forge.mcp_server "$@"
 ```
 
 ### 1.3. Claude Desktop での接続設定
@@ -41,9 +44,9 @@ Claude Desktop アプリケーションから本オーケストレータを MCP 
 ```json
 {
   "mcpServers": {
-    "ekp-dsc": {
+    "ekp-forge": {
       "command": "/bin/bash",
-      "args": ["/home/tomo/project/000_devenv/3tier_ai_devs/run-mcp.sh"],
+      "args": ["/home/tomo/project/000_devenv/ekp-forge/run-mcp.sh"],
       "env": {
         "OPENROUTER_API_KEY": "YOUR_OPENROUTER_API_KEY"
       }
@@ -51,6 +54,14 @@ Claude Desktop アプリケーションから本オーケストレータを MCP 
   }
 }
 ```
+
+### 1.4. 公開されているMCPツール
+
+| ツール | 説明 |
+|--------|------|
+| `execute_simple_aider` | 静的解析や自己修復なしでAiderを実行 |
+| `run_managed_task` | 完全な管理パイプライン: トリアージ → アーキテクト → ワーカー → 検証 → 統合 |
+| `run_epic_task` | エピックタスクをサブタスクに分解し、TaskTreeで並列実行 |
 
 ---
 

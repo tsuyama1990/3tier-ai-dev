@@ -65,7 +65,7 @@ class TestVerificationLoopSuccess:
                 worker, "_get_git_diff", return_value="diff --git a/src/middleware/auth.py b/src/middleware/auth.py"
             ),
         ):
-            result = worker.execute_verification_loop(task_schema, "plan", run_adversarial=False)
+            result = worker.execute_verification_loop(task_schema, "plan")
             assert result["status"] == "success"
             assert result["retries"] == 1
             assert result["help_request"] is None
@@ -87,7 +87,7 @@ class TestVerificationLoopSuccess:
             patch.object(worker, "_run_pytest", side_effect=_run_pytest_side_effect),
             patch.object(worker, "_get_git_diff", return_value="diff --git a/file.py b/file.py"),
         ):
-            result = worker.execute_verification_loop(task_schema, "plan", run_adversarial=False)
+            result = worker.execute_verification_loop(task_schema, "plan")
             assert result["status"] == "success"
             assert result["retries"] == 2
 

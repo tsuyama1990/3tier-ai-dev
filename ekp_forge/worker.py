@@ -58,7 +58,6 @@ class WorkerAgent:
         task: Any,  # TaskSchema (avoid import-time circular issues with typing)
         plan: str,
         _rag_context: str = "",
-        run_adversarial: bool = True,
     ) -> dict[str, Any]:
         """
         Run Aider + Quality Checks (pytest, ruff, mypy) in a loop with escalation policy.
@@ -217,38 +216,13 @@ class WorkerAgent:
                             git_diff = self._get_git_diff()
                             self._update_reflection_log(task, error_chunk, success=True)
 
-                            result = {
+                            return {
                                 "status": "success",
                                 "retries": attempt,
                                 "error_chunk_summary": error_chunk,
                                 "help_request": None,
                                 "git_diff": git_diff,
-                                "patch_report": None,
-                                "adversarial_passed": None,
                             }
-
-                            if run_adversarial:
-                                test_file = None
-                                try:
-                                    from ekp_forge.adversarial_tester import AdversarialTester
-
-                                    tester = AdversarialTester()
-                                    test_file, _ = tester.generate_edge_case_tests(task, git_diff, model=self.model)
-                                    adv_ok, adv_output = tester.run_adversarial_tests(test_file)
-                                    patch_report = tester.generate_patch_report(task, result, (adv_ok, adv_output))
-                                    result["patch_report"] = patch_report
-                                    result["adversarial_passed"] = adv_ok
-                                except Exception as e:
-                                    result["patch_report"] = {"error": f"Adversarial audit failed: {e!s}"}
-                                    result["adversarial_passed"] = False
-                                finally:
-                                    if test_file and os.path.exists(test_file):
-                                        try:
-                                            os.remove(test_file)
-                                        except Exception:
-                                            pass
-
-                            return result
 
                         # Formulate combined error feedback log for Aider
                         error_log_parts = []

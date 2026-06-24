@@ -157,7 +157,9 @@ def run_3tier_dev(
                     if success:
                         orchestrator.log("Validation passed with skip_self_healing=True.")
                         os.chdir(original_cwd)
-                        integrate_ok, integrate_err = integrate_changes(Path(original_cwd), sandbox_path=ws_path)
+                        integrate_ok, integrate_err, _integrate_log = integrate_changes(
+                            Path(original_cwd), sandbox_path=ws_path
+                        )
                         if not integrate_ok:
                             return {
                                 "success": False,
@@ -224,7 +226,9 @@ def run_3tier_dev(
                     if success:
                         orchestrator.log("All tests and quality checks passed. Success!")
                         os.chdir(original_cwd)
-                        integrate_ok, integrate_err = integrate_changes(Path(original_cwd), sandbox_path=ws_path)
+                        integrate_ok, integrate_err, _integrate_log = integrate_changes(
+                            Path(original_cwd), sandbox_path=ws_path
+                        )
                         if not integrate_ok:
                             return {
                                 "success": False,

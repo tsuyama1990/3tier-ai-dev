@@ -24,7 +24,7 @@ class TestOrchestratorAPI(unittest.TestCase):
         """成功時、厳格なJSONスキーマ（辞書）で結果が返ること"""
         # Mock Path.exists to return True for all paths
         mock_exists.return_value = True
-        mock_integrate.return_value = (True, "Successfully integrated 1 files")
+        mock_integrate.return_value = (True, "Successfully integrated 1 files", None)
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "All tests passed"
@@ -74,7 +74,7 @@ class TestOrchestratorAPI(unittest.TestCase):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_run.return_value = mock_result
-            mock_integrate.return_value = (True, "Successfully integrated 1 files")
+            mock_integrate.return_value = (True, "Successfully integrated 1 files", None)
 
             with patch("pathlib.Path.exists", return_value=True):
                 run_3tier_dev("prompt", "ase", ["dummy.py"])

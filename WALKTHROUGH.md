@@ -1,62 +1,141 @@
-# Ollama 連携検証および機能実装のウォークスルー
+# EKP-Forge Development Walkthrough
 
-本開発では、開発支援エージェント（Aider）および Asset Synthesizer のバックエンドとしてローカルの Ollama (`qwen2.5-coder:7b`) を統合・検証するための環境および各種テストを整備しました。
-
----
-
-## 実施した変更点
-
-### 1. 統合検証スクリプトの作成
-- [validate_ollama.sh](file:///home/tomo/project/000_devenv/ekp-forge/validate_ollama.sh)
-  - Ollama の疎通確認から、Step 1（疎通）、Step 2（知識優先）、Step 3（自己修復ストレス）、Step 4（Asset Synthesizer 呼び出し）の全4テストケースを順次実行し、サマリーを出力するマスタースクリプト。
-
-### 2. 各検証ステップの実装
-
-#### **Step 1: Baseline Communication**
-- [test_ollama_baseline.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/step1_baseline/test_ollama_baseline.py)
-  - Ollama の `/api/chat` API に接続し、タイムアウト時間内に有効なレスポンスが取得できることを確認するベースラインテスト。
-
-#### **Step 2: Fake API Reference**
-- [.ai-knowledge/fake_lib.md](file:///home/tomo/project/000_devenv/ekp-forge/.ai-knowledge/fake_lib.md)
-  - 一般的な知識とは異なる特殊な仕様（`FakeCalculator(use_magic_mode=True, offset=-99)` の強制）を記述した API リファレンス。
-- [test_fake_api_ref.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/step2_fake_api/test_fake_api_ref.py)
-  - Aider を経由してコードを生成させる際、Ollama が `.ai-knowledge/fake_lib.md` を正しく読み込み、一般常識（通常の `Calculator` など）に逃げずに指定された特殊な引数を満たして実装できるか検証するテスト。
-
-#### **Step 3: Self-Healing Loop Stress**
-- [test_self_healing_stress.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/step3_stress/test_self_healing_stress.py)
-  - AST ゲートキーパー（`validate_imports`）が禁止インポート（`os`）を検出し、自己修復ループを始動できるかを検証する。
-  - ループが上限（3回）に達した際に `git reset --hard` / `git clean` が正しく作動し、失敗状態で終了することを確認。
-
-#### **Step 4: Asset Synthesizer Ollama Integration**
-- [test_ollama_synthesizer.py](file:///home/tomo/project/000_devenv/ekp-forge/tests/step4_ollama_synthesizer/test_ollama_synthesizer.py)
-  - `asset_synthesizer.py` に追加した `--llm-provider ollama` 経由のグラフ合成処理を検証するテスト。
-  - 疎通不全時のテンプレートモードへの自動フォールバック動作を含めた耐久性を保証。
-
-### 3. コアコードへの機能拡張
-
-- [orchestrator_api.py](file:///home/tomo/project/000_devenv/ekp-forge/orchestrator_api.py)
-  - 呼び出しインターフェースを拡張し、`model` 引数および `skip_self_healing` 引数を追加。
-  - Aider 起動時に `--yes` や `--no-git` フラグを適切に設定し、非対話型での実行を安定化。
-  - パス補正時に pathlib モックと干渉しないよう、ロックファイル検査を `os.path.exists` に変更。
-- [asset_synthesizer.py](file:///home/tomo/project/000_devenv/ekp-forge/dsc/asset_synthesizer.py)
-  - ローカル Ollama API 向けの接続メソッド `_call_ollama` を標準ライブラリ（`urllib.request`）のみで実装。
-  - CLI パーサーに `--llm-provider` と `--ollama-url` を追加。
+This document chronicles the development and validation of EKP-Forge, covering Ollama integration, Safe Factory implementation, and the v4.1 multi-agent architecture.
 
 ---
 
-## 検証方法と結果
+## Table of Contents
 
-マスター検証スクリプトを実行し、全テストステージがクリアされることを確認します。
+1. [Ollama Integration Validation](#1-ollama-integration-validation)
+2. [Safe Factory Architecture Implementation](#2-safe-factory-architecture-implementation)
+3. [v4.1 Multi-Agent Pipeline Improvements](#3-v41-multi-agent-pipeline-improvements)
+4. [Verification Methods & Results](#4-verification-methods--results)
+
+---
+
+## 1. Ollama Integration Validation
+
+Integration and validation of local Ollama (`qwen2.5-coder:7b`) as the backend for Aider and Asset Synthesizer.
+
+### Changes Implemented
+
+#### 1.1. Master Validation Script
+- [`validate_ollama.sh`](validate_ollama.sh): Sequential execution of all 4 test steps with summary output.
+
+#### 1.2. Step Implementations
+
+| Step | Test File | Description |
+|------|-----------|-------------|
+| **Step 1: Baseline** | [`tests/step1_baseline/test_ollama_baseline.py`](tests/step1_baseline/test_ollama_baseline.py) | Verifies Ollama `/api/chat` connectivity with timeout handling |
+| **Step 2: Fake API Reference** | [`tests/step2_fake_api/test_fake_api_ref.py`](tests/step2_fake_api/test_fake_api_ref.py) | Validates Aider correctly reads `.ai-knowledge/fake_lib.md` and generates code matching special parameters (`FakeCalculator(use_magic_mode=True, offset=-99)`) |
+| **Step 3: Self-Healing Stress** | [`tests/step3_stress/test_self_healing_stress.py`](tests/step3_stress/test_self_healing_stress.py) | Tests AST gatekeeper detecting banned imports (`os`), triggering self-healing loop, verifying max retry (3) rollback |
+| **Step 4: Synthesizer Integration** | [`tests/step4_ollama_synthesizer/test_ollama_synthesizer.py`](tests/step4_ollama_synthesizer/test_ollama_synthesizer.py) | Validates `--llm-provider ollama` graph synthesis with automatic template fallback on connectivity failure |
+
+#### 1.3. Core Code Extensions
+
+- **[`ekp_forge/orchestrator_api.py`](ekp_forge/orchestrator_api.py)**: Extended call interface with `model` and `skip_self_healing` parameters. Added `--yes`/`--no-git` flags for non-interactive Aider execution.
+- **[`dsc/asset_synthesizer.py`](dsc/asset_synthesizer.py)**: Added `_call_ollama` using standard library (`urllib.request`). CLI extended with `--llm-provider` and `--ollama-url` flags.
+
+---
+
+## 2. Safe Factory Architecture Implementation
+
+The Safe Factory transforms EKP-Forge from a monolithic agent system into a **multi-agent pipeline with strict security boundaries**. Core principle: **isolate the worker in a sandbox, remove all destructive capabilities, and delegate Git operations to a dedicated integrator agent.**
+
+### Problems Solved
+
+| Issue | Solution |
+|-------|----------|
+| **Git Rollback Workspace Wipeout** | Worker operates in temporary sandbox; no `git` access on host |
+| **Global Checker Scope Leakage** | Scoped linters check only changed files via `git diff --name-only` |
+| **Self-Overwriting Configuration** | `pyproject.toml` excluded from sandbox; Config Agent uses structured TOML parsing |
+| **Destructive pyproject.toml Parsing** | Config Agent with `ConfigChangeRequest` schema prevents regex corruption |
+| **Hardcoded Path Dependencies** | All paths resolved relative to sandbox workspace |
+
+### Sandbox Components
+
+| Module | File | Purpose |
+|--------|------|---------|
+| **SandboxWorkspace** | [`ekp_forge/sandbox/workspace.py`](ekp_forge/sandbox/workspace.py) | Context manager creating ephemeral temp directory with whitelisted file copy |
+| **Cloner Agent** | [`ekp_forge/sandbox/cloner.py`](ekp_forge/sandbox/cloner.py) | Shallow git clone or fallback copy into sandbox |
+| **Integrator Agent** | [`ekp_forge/sandbox/integrator.py`](ekp_forge/sandbox/integrator.py) | Copies verified diffs back + global mypy/pytest regression |
+| **Config Agent** | [`ekp_forge/sandbox/config_agent.py`](ekp_forge/sandbox/config_agent.py) | Safe TOML/YAML modification via structured requests |
+| **Constraints** | [`ekp_forge/sandbox/constraints.py`](ekp_forge/sandbox/constraints.py) | Path allow/deny rules for sandbox file copying |
+| **Verification** | [`ekp_forge/sandbox/verification.py`](ekp_forge/sandbox/verification.py) | CWD-scoped Ruff + Mypy execution inside sandbox |
+| **Scoped Lint** | [`ekp_forge/sandbox/scoped_lint.py`](ekp_forge/sandbox/scoped_lint.py) | Git-diff-scoped linting on changed files only |
+
+---
+
+## 3. v4.1 Multi-Agent Pipeline Improvements
+
+Based on an architectural review scoring EKP-Forge at **88-90 points**, five targeted improvements were implemented to reach a "sustainably growing, collapse-resistant organization."
+
+### Improvement 1: Architect Approval Gate
+
+- **Problem**: Task Planner concretizes abstract instructions (e.g., "add caching" → "implement Redis") without consulting ADRs.
+- **Solution**: [`ekp_forge/sandbox/architect_review.py`](ekp_forge/sandbox/architect_review.py) — deterministic (non-LLM) token-based cross-reference between plan text and ADR decision sections.
+- **Result**: Plan violations detected and regenerated before reaching Worker.
+
+### Improvement 2: Success Pattern DB
+
+- **Problem**: Knowledge Manager was failure-only; successful patterns could not be reused.
+- **Solution**: [`ekp_forge/sandbox/success_patterns.py`](ekp_forge/sandbox/success_patterns.py) — stores verified diffs as reusable templates in `.ai-knowledge/successes/`.
+- **Result**: Manager queries via TF-IDF during plan generation for reusable templates.
+
+### Improvement 3: Integrator Cross-Module Regression
+
+- **Problem**: Parallel Workers produce changes with conflicting type assumptions.
+- **Solution**: [`ekp_forge/sandbox/integrator.py`](ekp_forge/sandbox/integrator.py) — runs global `mypy .` and `pytest` after file copy; reverts on failure.
+- **Result**: Cross-module type conflicts detected before commit.
+
+### Improvement 4: Adversarial Reviewer as Independent Gate
+
+- **Problem**: Adversarial testing was embedded in Worker's verification loop, risking false-positive blocking.
+- **Solution**: [`ekp_forge/adversarial_tester.py`](ekp_forge/adversarial_tester.py) — `AdversarialReviewer` as separate gate between Worker and Integrator. Failures are warnings, not blockers.
+- **Result**: Edge case testing without blocking progress.
+
+### Improvement 5: Challenge Agent with Budget
+
+- **Problem**: Challenge Agent tends toward "reject everything" behavior as it gets smarter.
+- **Solution**: [`ekp_forge/schemas/task_schema.py`](ekp_forge/schemas/task_schema.py) — `ChallengeResult` enforces `max_objections=3` hard cap with mandatory `alternative_proposal`.
+- **Result**: Budgeted objections with concrete alternatives.
+
+---
+
+## 4. Verification Methods & Results
+
+### Ollama Validation
 
 ```bash
 bash validate_ollama.sh
 ```
 
-### 期待される出力例 (SUMMARY)
-```text
+Expected output:
+```
 === [SUMMARY] ===
 Step 1: PASS ✅
 Step 2: PASS ✅
 Step 3: PASS ✅
 Step 4: PASS ✅
 ```
+
+### Test Suite
+
+```bash
+pytest -v --ignore=tests/step4_ollama_synthesizer/fixtures/
+```
+
+### Component Tests
+
+| Component | Tests | Focus |
+|-----------|-------|-------|
+| Sandbox Workspace | [`tests/test_sandbox_components.py`](tests/test_sandbox_components.py) | Workspace creation, whitelist filtering, cleanup |
+| Manager Agent | [`tests/test_manager.py`](tests/test_manager.py) | Triage, challenge agent, ADR generation |
+| Worker Agent | [`tests/test_worker.py`](tests/test_worker.py) | Aider execution, verification loop, escalation |
+| Architect Review | Covered in sandbox tests | ADR compliance, keyword detection |
+| Success Patterns | Covered in sandbox tests | Store, search, TF-IDF matching |
+| Integrator | Covered in sandbox tests | File copy, cross-module regression, revert |
+
+---
+
+*See [`README.md`](README.md) for the full project overview and [`docs/organization_design.md`](docs/organization_design.md) for the complete v4.1 architecture design.*

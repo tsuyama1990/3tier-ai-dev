@@ -119,7 +119,7 @@ def test_integrator_applies_changes(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     # Run integration.
-    success, msg = integrator.integrate_changes(tmp_path)
+    success, msg, _log = integrator.integrate_changes(tmp_path)
     assert success, msg
     # The original file should now contain the sandbox version.
     assert original.read_text(encoding="utf-8") == "v2"
@@ -185,6 +185,6 @@ def test_integrator_file_limit_enforced(monkeypatch: pytest.MonkeyPatch, tmp_pat
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    success, msg = integrator.integrate_changes(tmp_path)
+    success, msg, _log = integrator.integrate_changes(tmp_path)
     assert not success
     assert "exceeding the limit of 3" in msg
