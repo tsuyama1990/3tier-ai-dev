@@ -382,6 +382,26 @@ The MCP server is configured via [`mcp_config.json`](mcp_config.json) and launch
 }
 ```
 
+### Preloading the Ollama Model
+
+MCP tools (especially `execute_simple_aider` and `execute_strict_compile`) rely on Ollama for code generation. If the model is not loaded into memory, the first request will incur a ~4.7 GB load time that can cause a timeout (default: 30–120s).
+
+**Recommended startup sequence**:
+
+```bash
+# 1. Preload the model into memory (keeps it warm globally)
+ollama run qwen2.5-coder:7b --keep-alive -1 &
+sleep 2  # wait for model to initialize
+
+# 2. Start the MCP server (run from ekp-forge repo root)
+cd /path/to/ekp-forge
+./run-mcp.sh
+```
+
+> **Note**: `ollama run` is a system-wide command — it loads the model into memory regardless of which directory you run it from. You only need to do this once per machine session. The `--keep-alive -1` flag keeps the model resident in GPU/CPU memory indefinitely, preventing timeout on subsequent requests.
+>
+> `run-mcp.sh` can be executed from **any project directory** — the `--aider-path` uses an absolute path to ekp-forge's orchestrator, and `--repo-path` dynamically captures the current working directory via `$(pwd)`. For other projects, simply set `command` in `mcp_config.json` to the absolute path of `run-mcp.sh`.
+
 For Claude Desktop integration and detailed Aider setup, see [`docs/detailed_guide.md`](docs/detailed_guide.md).
 
 ---
