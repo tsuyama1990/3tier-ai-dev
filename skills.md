@@ -217,4 +217,3 @@ Worker Agent は、Aider によるコード生成 → 検証 → エラー収集
 - **組織設計ドキュメント:** [`docs/organization_design.md`](docs/organization_design.md)
 - **Safe Factory設計:** [`plans/safe_factory_architecture.md`](plans/safe_factory_architecture.md)
 - **アーキテクチャ改善計画:** [`plans/review_driven_improvements.md`](plans/review_driven_improvements.md)
-- **開発ウォークスルー:** [`WALKTHROUGH.md`](WALKTHROUGH.md)

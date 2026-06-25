@@ -537,7 +537,6 @@ See [`docs/detailed_guide.md`](docs/detailed_guide.md) for:
 | **Safe Factory Architecture** | [`plans/safe_factory_architecture.md`](plans/safe_factory_architecture.md) | In-depth sandbox isolation design, component specifications, security analysis |
 | **Review-Driven Improvements** | [`plans/review_driven_improvements.md`](plans/review_driven_improvements.md) | Five targeted improvements (88→90+ scoring), architect gate, success patterns, cross-module regression |
 | **Skills Reference** | [`skills.md`](skills.md) | Executable skill definitions for DSC pipeline stages and agent integration |
-| **Walkthrough** | [`WALKTHROUGH.md`](WALKTHROUGH.md) | Ollama integration validation walkthrough (Step 1-4) |
 | **Architecture Design (Japanese)** | [`architecture_design.md`](architecture_design.md) | Original detailed design document in Japanese |
 | **Decision Logs** | [`decisions/`](decisions/) | Architecture Decision Records (ADRs) with assumption tracking and context |
 

@@ -65,3 +65,9 @@ warn_unused_ignores = false
 [[tool.mypy.overrides]]
 module = "tests.*"
 ignore_errors = true
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "ruff>=0.15.19",
+]
