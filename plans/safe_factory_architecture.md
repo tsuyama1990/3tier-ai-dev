@@ -97,7 +97,7 @@ class SandboxWorkspace:
 
 **Purpose**: Clone target repository to sandbox before Worker operations.
 
-**File**: `agents/cloner.py`
+**File**: `ekp_forge/sandbox/cloner.py`
 
 ```python
 class ClonerAgent:
@@ -127,7 +127,7 @@ class ClonerAgent:
 
 **Purpose**: Apply diffs and manage Git operations (the only agent with Git access).
 
-**File**: `agents/integrator.py`
+**File**: `ekp_forge/sandbox/integrator.py`
 
 ```python
 class IntegratorAgent:
@@ -159,7 +159,7 @@ class IntegratorAgent:
 
 **Purpose**: Safely manage configuration file changes via metadata requests.
 
-**File**: `agents/config_agent.py`
+**File**: `ekp_forge/sandbox/config_agent.py`
 
 ```python
 class ConfigChangeRequest(BaseModel):

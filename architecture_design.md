@@ -46,7 +46,7 @@ project/
 
 ## 3. DSC (Dependency Semantic Compiler) パイプライン
 
-知識の抽出・評価・アセット化を行う4段階のコンパイラプロセス。
+知識の抽出・評価・アセット化を行う5段階のコンパイラプロセス。
 
 ### 3.1. Package Inspector
 
@@ -62,7 +62,11 @@ project/
 
 ### 3.4. Asset Synthesizer
 
-トレース結果とTrust Scoreに基づき、最終的なナレッジアセット（MarkdownグラフおよびPythonスクリプト）を生成し、`~/.knowledge-cache/` へ出力する。
+トレース結果とTrust Scoreに基づき、意味論的グラフアセット（`integration_graph.md`、`workflow_graph.md`）を生成し、`~/.knowledge-cache/` へ出力する。
+
+### 3.5. Deployer
+
+グローバルキャッシュからターゲットプロジェクトへアセットを実体コピー（Hard Copy）し、`api_schema.yaml` のインポートホワイトリストを自動更新する。詳細は [§8 デプロイ・パイプライン](#8-デプロイパイプライン-dscdeploypy) を参照。
 
 **LLM連携（`--llm` オプトイン）:**
 - **デフォルト（`--no-llm`）:** オフライン・高速モード。AST解析やトレース情報のみに基づき、APIサーフェステーブルを格納した基本的な `integration_graph.md` を生成する。

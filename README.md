@@ -352,13 +352,17 @@ EKP-Forge exposes an **MCP (Model Context Protocol)** server that allows AI agen
 ### Server Entry Point
 [`ekp_forge/mcp_server.py`](ekp_forge/mcp_server.py)
 
+The server is launched via [`run-mcp.sh`](run-mcp.sh), which wraps `aider-mcp` (the Aider MCP bridge). The script dynamically resolves `OPENROUTER_API_KEY` from `~/.zshrc` and passes the orchestrator path to aider-mcp.
+
 ### Exposed Tools
 
 | Tool | Description |
 |---|---|
 | `execute_simple_aider` | Run Aider with a plain prompt, no static analysis or self-repair |
+| `execute_strict_compile` | Full `run_3tier_dev` pipeline: sandbox → Aider → verification → integration |
 | `run_managed_task` | Full managed pipeline: triage → architect → worker → verify → integrate |
 | `run_epic_task` | Decompose epic into subtasks, execute in parallel via TaskTree |
+| `generate_task_id` | Generate a deterministic task ID from a goal string |
 
 ### Configuration
 
@@ -445,19 +449,10 @@ print(result)  # {"success": True, "status": "ok", ...}
 ./run-mcp.sh
 ```
 
-### Ollama Validation
+### Sandbox Pipeline (MCP Server)
 
 ```bash
-bash validate_ollama.sh  # Runs all 4 validation steps
-```
-
-Expected output:
-```
-=== [SUMMARY] ===
-Step 1: PASS ✅
-Step 2: PASS ✅
-Step 3: PASS ✅
-Step 4: PASS ✅
+./run-mcp.sh
 ```
 
 ---

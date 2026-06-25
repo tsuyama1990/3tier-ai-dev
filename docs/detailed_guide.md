@@ -28,14 +28,22 @@ MCPサーバーを認識させるため、プロジェクトルートに [`mcp_c
 ```
 
 ### 1.2. ラッパースクリプト (`run-mcp.sh`)
-本スクリプトは、MCP経由でのEKP-Forgeオーケストレーション起動を安全に行うためのラッパーです。
+本スクリプトは、MCP経由でのEKP-Forgeオーケストレーション起動を安全に行うためのラッパーです。`aider-mcp`（Aider MCPブリッジ）を使用して起動し、`OPENROUTER_API_KEY` を `~/.zshrc` から動的に解決します。
 
 ```bash
 #!/bin/bash
 # run-mcp.sh
-cd /home/tomo/project/000_devenv/ekp-forge
-source .venv/bin/activate
-exec python3 -m ekp_forge.mcp_server "$@"
+# 1. zshrc から OPENROUTER_API_KEY を抽出
+source ~/.zshrc 2>/dev/null || true
+export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
+
+# 2. 現在のリポジトリパスを動的に取得
+CURRENT_REPO_PATH=$(pwd)
+
+# 3. aider-mcp 経由で起動（ekp_forge/orchestrator.py を Aider パスとして指定）
+exec /home/tomo/.local/bin/aider-mcp \
+  --aider-path "/home/tomo/project/000_devenv/ekp-forge/ekp_forge/orchestrator.py" \
+  --repo-path "$CURRENT_REPO_PATH"
 ```
 
 ### 1.3. Claude Desktop での接続設定
@@ -60,8 +68,10 @@ Claude Desktop アプリケーションから本オーケストレータを MCP 
 | ツール | 説明 |
 |--------|------|
 | `execute_simple_aider` | 静的解析や自己修復なしでAiderを実行 |
+| `execute_strict_compile` | `run_3tier_dev` パイプライン全体を実行: サンドボックス → Aider → 検証 → 統合 |
 | `run_managed_task` | 完全な管理パイプライン: トリアージ → アーキテクト → ワーカー → 検証 → 統合 |
 | `run_epic_task` | エピックタスクをサブタスクに分解し、TaskTreeで並列実行 |
+| `generate_task_id` | 目標文字列から決定論的なタスクIDを生成 |
 
 ---
 
