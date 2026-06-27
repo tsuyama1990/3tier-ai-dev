@@ -1,3 +1,44 @@
 allowed_imports:
   - builtins
   - typing
+  - logging
+  - os
+  - sys
+  - json
+  - re
+  - math
+  - pathlib
+  - subprocess
+  - dataclasses
+  - enum
+  - hashlib
+  - abc
+  - collections
+  - functools
+  - itertools
+  - inspect
+  - textwrap
+  - datetime
+  - uuid
+  - io
+  - ast
+  - copy
+  - warnings
+  - contextlib
+  - argparse
+  - numpy
+  - yaml
+  - pydantic
+  - random
+  - pytest
+  - requests
+  - httpx
+  - fastapi
+  - uvicorn
+  - pydantic_settings
+  - anyio
+  - sse_starlette
+  - starlette
+  - jinja2
+  - multipart
+  - pyjwt
