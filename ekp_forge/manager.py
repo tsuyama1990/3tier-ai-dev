@@ -1099,17 +1099,17 @@ Validation passed with {error_chunk.total_retries} retries.
             f"## Plan\n{plan[:2000]}\n\n"
             f"## Required Output Format\n"
             f"Output a JSON object with EXACTLY these keys:\n"
-            f"- contract_id: \"C-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-xxxxxx\"\n"
+            f'- contract_id: "C-{datetime.now(UTC).strftime("%Y%m%d%H%M%S")}-xxxxxx"\n'
             f"- objective: string (single sentence describing the implementation)\n"
             f"- target_files: list of strings (files to modify)\n"
-            f"- editable_symbols: list of strings (format: \"ClassName.method_name\" or \"function_name\")\n"
+            f'- editable_symbols: list of strings (format: "ClassName.method_name" or "function_name")\n'
             f"- forbidden_symbols: list of strings\n"
             f"- acceptance_tests: list of strings\n"
             f"- implementation_steps: list of strings\n"
-            f"- local_design_freedom: \"none\" or \"within_file\"\n"
+            f'- local_design_freedom: "none" or "within_file"\n'
             f"- skeleton_code: string (Python code with class/function signatures and ``pass`` bodies)\n"
             f"\n"
-            f"CRITICAL: editable_symbols must use dotted format (e.g., \"Calculator.add\").\n"
+            f'CRITICAL: editable_symbols must use dotted format (e.g., "Calculator.add").\n'
             f"skeleton_code must be valid Python with type hints and ``pass`` for all method bodies.\n"
         )
 
@@ -1200,6 +1200,7 @@ Validation passed with {error_chunk.total_retries} retries.
                     data = _json.loads(response)
                 except _json.JSONDecodeError:
                     import re as _re
+
                     json_match = _re.search(r"\{[^}]+\}", response, _re.DOTALL)
                     if not json_match:
                         raise
@@ -1219,6 +1220,7 @@ Validation passed with {error_chunk.total_retries} retries.
         # Fallback: trust but verify with AST
         try:
             import ast
+
             ast.parse(code)
             return True, ""
         except SyntaxError as e:

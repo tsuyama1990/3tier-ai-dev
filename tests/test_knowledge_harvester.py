@@ -128,9 +128,7 @@ print(result)
 class TestKnowledgeHarvesterPyPI:
     def test_fetch_pypi_json_invalid_package(self) -> None:
         """Non-existent package should return None."""
-        result = KnowledgeHarvester._fetch_pypi_json(
-            "this-package-definitely-does-not-exist-12345"
-        )
+        result = KnowledgeHarvester._fetch_pypi_json("this-package-definitely-does-not-exist-12345")
         assert result is None
 
     def test_fetch_pypi_json_valid_package(self) -> None:

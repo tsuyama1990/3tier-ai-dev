@@ -85,8 +85,6 @@ def test_diag() -> Diagnostic:
     )
 
 
-
-
 # ===================================================================
 # FixPlanner.has_work
 # ===================================================================
@@ -129,9 +127,7 @@ class TestPlanPriority:
         assert tasks[0].priority == 1  # syntax comes first
         assert tasks[0].diagnostics[0].category == DiagnosticCategory.SYNTAX
 
-    def test_plan_returns_all_same_priority(
-        self, planner: FixPlanner, syntax_diag: Diagnostic
-    ) -> None:
+    def test_plan_returns_all_same_priority(self, planner: FixPlanner, syntax_diag: Diagnostic) -> None:
         """All diagnostics at the same priority are bundled."""
         d2 = Diagnostic(
             tool="ruff",
@@ -248,13 +244,21 @@ class TestFixHistory:
     def test_multiple_history_entries(self, planner: FixPlanner) -> None:
         """Multiple plan() calls accumulate multiple history entries."""
         diag1 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="a.py", line=1, code="E999", message="syntax",
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="a.py",
+            line=1,
+            code="E999",
+            message="syntax",
             category=DiagnosticCategory.SYNTAX,
         )
         diag2 = Diagnostic(
-            tool="mypy", severity=DiagnosticSeverity.ERROR,
-            file="b.py", line=10, code="mypy-arg-type", message="type",
+            tool="mypy",
+            severity=DiagnosticSeverity.ERROR,
+            file="b.py",
+            line=10,
+            code="mypy-arg-type",
+            message="type",
             category=DiagnosticCategory.TYPE_MISMATCH,
         )
         planner.plan([diag1])
@@ -264,13 +268,21 @@ class TestFixHistory:
     def test_history_included_in_instruction(self, planner: FixPlanner) -> None:
         """After first fix, instruction includes '[PREVIOUSLY FIXED]'."""
         diag1 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="a.py", line=1, code="E999", message="syntax error",
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="a.py",
+            line=1,
+            code="E999",
+            message="syntax error",
             category=DiagnosticCategory.SYNTAX,
         )
         diag2 = Diagnostic(
-            tool="mypy", severity=DiagnosticSeverity.ERROR,
-            file="b.py", line=10, code="mypy-arg-type", message="type error",
+            tool="mypy",
+            severity=DiagnosticSeverity.ERROR,
+            file="b.py",
+            line=10,
+            code="mypy-arg-type",
+            message="type error",
             category=DiagnosticCategory.TYPE_MISMATCH,
         )
         planner.plan([diag1])
@@ -296,18 +308,30 @@ class TestCoLocationMerging:
     def test_same_file_nearby_lines_merged(self, planner: FixPlanner) -> None:
         """Same file, nearby lines, different priorities → merged."""
         syntax_diag = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="src/auth.py", line=1, code="E999", message="Syntax error",
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="src/auth.py",
+            line=1,
+            code="E999",
+            message="Syntax error",
             category=DiagnosticCategory.SYNTAX,
         )
         import_diag = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="src/auth.py", line=3, code="F401", message="Unused import",
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="src/auth.py",
+            line=3,
+            code="F401",
+            message="Unused import",
             category=DiagnosticCategory.UNUSED_IMPORT,
         )
         type_diag = Diagnostic(
-            tool="mypy", severity=DiagnosticSeverity.ERROR,
-            file="src/auth.py", line=5, code="mypy-arg-type", message="Type error",
+            tool="mypy",
+            severity=DiagnosticSeverity.ERROR,
+            file="src/auth.py",
+            line=5,
+            code="mypy-arg-type",
+            message="Type error",
             category=DiagnosticCategory.TYPE_MISMATCH,
         )
         # UNUSED_IMPORT is auto-fixable, so filtered out
@@ -320,13 +344,21 @@ class TestCoLocationMerging:
     def test_different_file_no_merge(self, planner: FixPlanner) -> None:
         """Different files → not merged, only highest priority returned."""
         d1 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="a.py", line=1, code="E999", message="syntax",
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="a.py",
+            line=1,
+            code="E999",
+            message="syntax",
             category=DiagnosticCategory.SYNTAX,
         )
         d2 = Diagnostic(
-            tool="mypy", severity=DiagnosticSeverity.ERROR,
-            file="b.py", line=2, code="mypy-arg-type", message="type",
+            tool="mypy",
+            severity=DiagnosticSeverity.ERROR,
+            file="b.py",
+            line=2,
+            code="mypy-arg-type",
+            message="type",
             category=DiagnosticCategory.TYPE_MISMATCH,
         )
         tasks = planner.plan([d1, d2])
@@ -337,13 +369,21 @@ class TestCoLocationMerging:
     def test_far_apart_lines_no_merge(self, planner: FixPlanner) -> None:
         """Same file but lines far apart → not merged."""
         d1 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="a.py", line=1, code="E999", message="syntax",
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="a.py",
+            line=1,
+            code="E999",
+            message="syntax",
             category=DiagnosticCategory.SYNTAX,
         )
         d2 = Diagnostic(
-            tool="mypy", severity=DiagnosticSeverity.ERROR,
-            file="a.py", line=100, code="mypy-arg-type", message="type",
+            tool="mypy",
+            severity=DiagnosticSeverity.ERROR,
+            file="a.py",
+            line=100,
+            code="mypy-arg-type",
+            message="type",
             category=DiagnosticCategory.TYPE_MISMATCH,
         )
         tasks = planner.plan([d1, d2])
@@ -353,13 +393,21 @@ class TestCoLocationMerging:
     def test_same_priority_not_merged(self, planner: FixPlanner) -> None:
         """Same priority items are not merged (they stay in same group anyway)."""
         d1 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="a.py", line=1, code="E999", message="syntax1",
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="a.py",
+            line=1,
+            code="E999",
+            message="syntax1",
             category=DiagnosticCategory.SYNTAX,
         )
         d2 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="a.py", line=3, code="E999", message="syntax2",
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="a.py",
+            line=3,
+            code="E999",
+            message="syntax2",
             category=DiagnosticCategory.SYNTAX,
         )
         tasks = planner.plan([d1, d2])

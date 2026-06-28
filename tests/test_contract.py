@@ -287,24 +287,36 @@ class TestHelpers:
         }
         for cat, expected_pri in cat_map.items():
             d = Diagnostic(
-                tool="ruff", severity=DiagnosticSeverity.ERROR,
-                file="test.py", message="test", category=cat,
+                tool="ruff",
+                severity=DiagnosticSeverity.ERROR,
+                file="test.py",
+                message="test",
+                category=cat,
             )
             assert diagnostic_priority(d) == expected_pri, f"Failed for {cat}"
 
     def test_group_diagnostics_by_priority(self) -> None:
         """Diagnostics are correctly grouped by priority level."""
         d1 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="a.py", message="syntax", category=DiagnosticCategory.SYNTAX,
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="a.py",
+            message="syntax",
+            category=DiagnosticCategory.SYNTAX,
         )
         d2 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="b.py", message="import", category=DiagnosticCategory.IMPORT,
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="b.py",
+            message="import",
+            category=DiagnosticCategory.IMPORT,
         )
         d3 = Diagnostic(
-            tool="mypy", severity=DiagnosticSeverity.ERROR,
-            file="c.py", message="type", category=DiagnosticCategory.TYPE_MISMATCH,
+            tool="mypy",
+            severity=DiagnosticSeverity.ERROR,
+            file="c.py",
+            message="type",
+            category=DiagnosticCategory.TYPE_MISMATCH,
         )
         grouped = group_diagnostics_by_priority([d1, d2, d3])
         assert len(grouped[1]) == 1  # syntax
@@ -315,16 +327,25 @@ class TestHelpers:
     def test_filter_auto_fixable(self) -> None:
         """Auto-fixable diagnostics (formatting, unused import) are filtered out."""
         d1 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.WARNING,
-            file="a.py", message="format", category=DiagnosticCategory.FORMATTING,
+            tool="ruff",
+            severity=DiagnosticSeverity.WARNING,
+            file="a.py",
+            message="format",
+            category=DiagnosticCategory.FORMATTING,
         )
         d2 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.WARNING,
-            file="b.py", message="unused", category=DiagnosticCategory.UNUSED_IMPORT,
+            tool="ruff",
+            severity=DiagnosticSeverity.WARNING,
+            file="b.py",
+            message="unused",
+            category=DiagnosticCategory.UNUSED_IMPORT,
         )
         d3 = Diagnostic(
-            tool="ruff", severity=DiagnosticSeverity.ERROR,
-            file="c.py", message="syntax", category=DiagnosticCategory.SYNTAX,
+            tool="ruff",
+            severity=DiagnosticSeverity.ERROR,
+            file="c.py",
+            message="syntax",
+            category=DiagnosticCategory.SYNTAX,
         )
         filtered = filter_auto_fixable([d1, d2, d3])
         assert len(filtered) == 1

@@ -46,6 +46,7 @@ class Capability(StrEnum):
     CODING = "coding"
     VERIFICATION = "verification"
     INTEGRATION = "integration"
+    ADVERSARIAL_REVIEW = "adversarial_review"  # Organizational-theory: independent edge-case audit
 
     # Phase 3: Dynamic Knowledge
     INTROSPECTION = "introspection"  # dir() / help() in sandbox
@@ -258,10 +259,7 @@ class CapabilityRegistry:
 
     def to_dict(self) -> dict[str, list[str]]:
         """Return a summary dict for debugging."""
-        return {
-            aid: [c.value for c in caps]
-            for aid, caps in self._agent_capabilities.items()
-        }
+        return {aid: [c.value for c in caps] for aid, caps in self._agent_capabilities.items()}
 
     def __contains__(self, agent_id: str) -> bool:
         return agent_id in self._agent_capabilities

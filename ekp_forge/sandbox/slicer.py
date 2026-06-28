@@ -131,9 +131,7 @@ class _FunctionReplacer(cst.CSTTransformer):
         self._current_class = node.name.value
         return True
 
-    def leave_ClassDef(
-        self, original_node: CSTClassDef, updated_node: CSTClassDef
-    ) -> CSTClassDef | cst.CSTNode:
+    def leave_ClassDef(self, original_node: CSTClassDef, updated_node: CSTClassDef) -> CSTClassDef | cst.CSTNode:
         self._current_class = None
         return updated_node
 

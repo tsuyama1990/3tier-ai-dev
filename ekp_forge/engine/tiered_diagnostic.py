@@ -124,10 +124,7 @@ class TieredDiagnosticRunner:
         ruff_result = run_single_tool("ruff", changed_files, cwd=resolve_cwd)
         ruff_diags = RuffParser.parse(ruff_result.raw_output)
         non_format_diags = [
-            d
-            for d in ruff_diags
-            if d.category
-            not in {DiagnosticCategory.FORMATTING, DiagnosticCategory.UNUSED_IMPORT}
+            d for d in ruff_diags if d.category not in {DiagnosticCategory.FORMATTING, DiagnosticCategory.UNUSED_IMPORT}
         ]
 
         if non_format_diags:
@@ -198,10 +195,7 @@ class TieredDiagnosticRunner:
             result = run_single_tool("ruff", changed_files, cwd=resolve_cwd)
             diags = RuffParser.parse(result.raw_output)
             non_format = [
-                d
-                for d in diags
-                if d.category
-                not in {DiagnosticCategory.FORMATTING, DiagnosticCategory.UNUSED_IMPORT}
+                d for d in diags if d.category not in {DiagnosticCategory.FORMATTING, DiagnosticCategory.UNUSED_IMPORT}
             ]
             return TieredDiagnosticResult(
                 stage=stage,
@@ -230,6 +224,4 @@ class TieredDiagnosticRunner:
                 next_stage=DiagnosticStage.PASSED,
             )
 
-        return TieredDiagnosticResult(
-            stage=DiagnosticStage.PASSED, passed=True
-        )
+        return TieredDiagnosticResult(stage=DiagnosticStage.PASSED, passed=True)

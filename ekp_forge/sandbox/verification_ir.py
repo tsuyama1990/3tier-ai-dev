@@ -327,9 +327,7 @@ class MypyParser:
     }
 
     # Regex: file:line:col: severity: message [code]
-    _MYPY_LINE_RE = re.compile(
-        r"^(.+?):(\d+):\d+:\s*(error|warning|note):\s*(.+?)(?:\s+\[([^\]]+)\])?\s*$"
-    )
+    _MYPY_LINE_RE = re.compile(r"^(.+?):(\d+):\d+:\s*(error|warning|note):\s*(.+?)(?:\s+\[([^\]]+)\])?\s*$")
 
     @classmethod
     def parse(cls, raw_output: str) -> list[Diagnostic]:
@@ -394,14 +392,10 @@ class PytestParser:
     """
 
     # Regex for FAILED lines: "FAILED path/to/test.py::test_name - ErrorType: msg"
-    _FAILED_RE = re.compile(
-        r"^FAILED\s+(.+?::\S+?)\s+-\s+(.+?):\s*(.+)$"
-    )
+    _FAILED_RE = re.compile(r"^FAILED\s+(.+?::\S+?)\s+-\s+(.+?):\s*(.+)$")
 
     # Regex for expected vs actual: "assert ..." or "E       assert ..."
-    _ASSERT_RE = re.compile(
-        r"assert\s+(.+?)\s*(?:==|!=|>=|<=|>|<|in|not in|is|is not)\s*(.+)"
-    )
+    _ASSERT_RE = re.compile(r"assert\s+(.+?)\s*(?:==|!=|>=|<=|>|<|in|not in|is|is not)\s*(.+)")
 
     # Regex for "E       AssertionError: ..."
     _ASSERTION_ERROR_RE = re.compile(
@@ -483,9 +477,7 @@ class PytestParser:
         return diagnostics
 
     @classmethod
-    def _extract_expected_actual(
-        cls, lines: list[str], current_idx: int
-    ) -> tuple[str | None, str | None]:
+    def _extract_expected_actual(cls, lines: list[str], current_idx: int) -> tuple[str | None, str | None]:
         """Scan forward from *current_idx* to extract expected/actual values.
 
         Looks for lines matching:
@@ -519,7 +511,7 @@ class _ToolResult:
     silent false positives.
     """
 
-    __slots__ = ("raw_output", "exit_code", "parse_ok")
+    __slots__ = ("exit_code", "parse_ok", "raw_output")
 
     def __init__(self, raw_output: str, exit_code: int = -1) -> None:
         self.raw_output = raw_output

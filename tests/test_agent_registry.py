@@ -389,13 +389,17 @@ class TestAgentRegistry:
             agent_id = "broad"
             capabilities = [Capability.CODING, Capability.INTROSPECTION, Capability.VERIFICATION]
             execution_tier = "local"
-            def execute(self, ctx): return {"status": "ok"}
+
+            def execute(self, ctx):
+                return {"status": "ok"}
 
         class NarrowAgent(BaseAgent):
             agent_id = "narrow"
             capabilities = [Capability.CODING]
             execution_tier = "local"
-            def execute(self, ctx): return {"status": "ok"}
+
+            def execute(self, ctx):
+                return {"status": "ok"}
 
         registry.register(BroadAgent())
         registry.register(NarrowAgent())
@@ -414,7 +418,9 @@ class TestAgentRegistry:
             agent_id = "coder"
             capabilities = [Capability.CODING]
             execution_tier = "local"
-            def execute(self, ctx): return {"status": "ok"}
+
+            def execute(self, ctx):
+                return {"status": "ok"}
 
         registry.register(agent1)
         registry.register(agent2)

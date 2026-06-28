@@ -37,6 +37,8 @@ from ekp_forge.manager import ManagerAgent
 from ekp_forge.orchestrator import REAL_AIDER
 from ekp_forge.protocol.assignment import OrganizationLoader
 from ekp_forge.protocol.roles import Role
+from ekp_forge.sandbox.adversarial_reviewer import AdversarialReviewer
+from ekp_forge.sandbox.integrator import IntegratorAgent
 from ekp_forge.schemas.task_schema import TaskSchema, _generate_task_id
 from ekp_forge.worker import WorkerAgent
 
@@ -67,10 +69,12 @@ def _get_workflow_engine(profile_name: str | None = None) -> WorkflowEngine:
         return _ENGINE_CACHE[cache_key]
 
     # Build registry with available agents
-    # Note: agent_id is a class attribute on both ManagerAgent and WorkerAgent
+    # Note: agent_id is a class attribute on all agent classes
     registry = AgentRegistry()
     registry.register(ManagerAgent(manager_id="MGR-Engine-01"))
     registry.register(WorkerAgent())
+    # Register IntegratorAgent for profiles that assign INTEGRATION to "integrator"
+    registry.register(IntegratorAgent())
 
     # Load profile
     profile = OrganizationLoader.load(profile_name)
@@ -235,8 +239,68 @@ def run_managed_task(task_schema: dict) -> dict:
             "error_summary": _extract_error_summary(impl_result),
         }
 
-    # Phase 4: Integration (validate outcome + generate ADR)
-    # Use contract-driven semantic validation if contract is available
+    # ------------------------------------------------------------------
+    # Phase 3.5: Adversarial Review (non-blocking, enterprise/org_theory only)
+    # ------------------------------------------------------------------
+    adversarial_warnings: list[str] = []
+    profile_name = os.environ.get("EKP_PROFILE", "simple")
+    if profile_name in ("enterprise", "org_theory"):
+        try:
+            code = _extract_affected_code(task)
+            if code.strip():
+                reviewer = AdversarialReviewer()
+                adv_result = reviewer.review(task, code)
+                if not adv_result[0]:
+                    adversarial_warnings.append(adv_result[1])
+        except Exception as e:
+            # Adversarial review failures should never block the pipeline
+            adversarial_warnings.append(f"Adversarial review error (non-blocking): {e}")
+
+    # ------------------------------------------------------------------
+    # Phase 4: Integration
+    # ------------------------------------------------------------------
+    # For enterprise/org_theory profiles, use IntegratorAgent with git apply
+    # + global checks + rollback. For simple/three_tier, use existing path.
+    if profile_name in ("enterprise", "org_theory"):
+        integrator = IntegratorAgent()
+        diff_content = impl_result.get("git_diff", "")
+        affected_files = task.affected_modules
+
+        if diff_content.strip():
+            success, log = integrator.integrate(diff_content, affected_files)
+            if not success:
+                return {
+                    "status": "failed",
+                    "task_id": task.task_id,
+                    "adr_path": None,
+                    "rejection_reason": f"Integration failed:\n{log}",
+                    "help_request": None,
+                    "error_summary": _extract_error_summary(impl_result),
+                    "adversarial_warnings": adversarial_warnings,
+                }
+
+        # Generate ADR via integration context
+        integration_context = {
+            "task": task,
+            "impl_result": impl_result,
+            "error_chunk_summary": impl_result.get("error_chunk_summary"),
+            "git_diff": diff_content,
+        }
+        if worker_contract is not None:
+            integration_context["worker_contract"] = worker_contract
+        integration_result = engine.run(Role.INTEGRATION, integration_context)
+
+        return {
+            "status": "success",
+            "task_id": task.task_id,
+            "adr_path": integration_result.get("adr_path"),
+            "rejection_reason": None,
+            "help_request": None,
+            "error_summary": _extract_error_summary(impl_result),
+            "adversarial_warnings": adversarial_warnings,
+        }
+
+    # Fallback: Existing integration path for simple/three_tier profiles
     integration_context = {
         "task": task,
         "impl_result": impl_result,
@@ -255,6 +319,7 @@ def run_managed_task(task_schema: dict) -> dict:
             "rejection_reason": f"Validation failed: {integration_result.get('feedback', '')}",
             "help_request": None,
             "error_summary": _extract_error_summary(impl_result),
+            "adversarial_warnings": adversarial_warnings,
         }
 
     return {
@@ -264,6 +329,7 @@ def run_managed_task(task_schema: dict) -> dict:
         "rejection_reason": None,
         "help_request": None,
         "error_summary": _extract_error_summary(impl_result),
+        "adversarial_warnings": adversarial_warnings,
     }
 
 
@@ -277,6 +343,25 @@ def _extract_error_summary(result: dict) -> list:
     if isinstance(error_chunk, dict):
         return error_chunk.get("entries", [])
     return []
+
+
+def _extract_affected_code(task: Any) -> str:
+    """Read source code from task's affected_modules for adversarial review.
+
+    Args:
+        task: The ``TaskSchema`` instance with ``affected_modules`` list.
+
+    Returns:
+        Concatenated source code from all affected files, or empty string.
+    """
+    from pathlib import Path
+
+    parts: list[str] = []
+    for mod in getattr(task, "affected_modules", []):
+        p = Path(mod)
+        if p.exists():
+            parts.append(f"# --- {mod} ---\n{p.read_text(encoding='utf-8')}")
+    return "\n\n".join(parts)
 
 
 @mcp.tool()

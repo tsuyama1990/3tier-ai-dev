@@ -123,7 +123,7 @@ src/utils.py:10:3: warning: Unused import "os"  [import-untyped]
 
     def test_parse_with_unknown_code(self) -> None:
         """Unknown mypy error codes map to OTHER category."""
-        raw = 'src/main.py:5:5: error: Something weird  [weird-code]\n'
+        raw = "src/main.py:5:5: error: Something weird  [weird-code]\n"
         diagnostics = MypyParser.parse(raw)
         assert len(diagnostics) == 1
         assert diagnostics[0].code == "mypy-weird-code"
@@ -131,7 +131,7 @@ src/utils.py:10:3: warning: Unused import "os"  [import-untyped]
 
     def test_parse_without_code_bracket(self) -> None:
         """Mypy output without [code] suffix."""
-        raw = 'src/main.py:5:8: error: Incompatible types\n'
+        raw = "src/main.py:5:8: error: Incompatible types\n"
         diagnostics = MypyParser.parse(raw)
         assert len(diagnostics) == 1
         assert diagnostics[0].code == "mypy-error"

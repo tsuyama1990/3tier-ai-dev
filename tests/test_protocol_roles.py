@@ -68,71 +68,81 @@ class TestRoleAssignment:
 
     def test_default_simple_profile(self) -> None:
         """Default assignment: manager for review/planning, worker for implementation."""
-        ra = RoleAssignment({
-            "requirement_review": "manager",
-            "planning": "manager",
-            "architecture": "manager",
-            "specification": "manager",
-            "implementation": "worker",
-            "verification": "worker",
-            "integration": "worker",
-        })
+        ra = RoleAssignment(
+            {
+                "requirement_review": "manager",
+                "planning": "manager",
+                "architecture": "manager",
+                "specification": "manager",
+                "implementation": "worker",
+                "verification": "worker",
+                "integration": "worker",
+            }
+        )
         assert ra.resolve(Role.REQUIREMENT_REVIEW) == ["manager"]
         assert ra.resolve(Role.IMPLEMENTATION) == ["worker"]
         assert ra.resolve(Role.INTEGRATION) == ["worker"]
 
     def test_multiple_workers(self) -> None:
         """Implementation can have multiple agents assigned."""
-        ra = RoleAssignment({
-            "requirement_review": "manager",
-            "planning": "manager",
-            "architecture": "manager",
-            "specification": "manager",
-            "implementation": ["worker_a", "worker_b"],
-            "verification": "worker",
-            "integration": "manager",
-        })
+        ra = RoleAssignment(
+            {
+                "requirement_review": "manager",
+                "planning": "manager",
+                "architecture": "manager",
+                "specification": "manager",
+                "implementation": ["worker_a", "worker_b"],
+                "verification": "worker",
+                "integration": "manager",
+            }
+        )
         assert ra.resolve(Role.IMPLEMENTATION) == ["worker_a", "worker_b"]
 
     def test_verification_multiple_checkers(self) -> None:
         """Verification can have multiple checkers."""
-        ra = RoleAssignment({
-            "requirement_review": "manager",
-            "planning": "manager",
-            "architecture": "manager",
-            "specification": "manager",
-            "implementation": "worker",
-            "verification": ["ruff_checker", "mypy_checker"],
-            "integration": "manager",
-        })
+        ra = RoleAssignment(
+            {
+                "requirement_review": "manager",
+                "planning": "manager",
+                "architecture": "manager",
+                "specification": "manager",
+                "implementation": "worker",
+                "verification": ["ruff_checker", "mypy_checker"],
+                "integration": "manager",
+            }
+        )
         assert ra.resolve(Role.VERIFICATION) == ["ruff_checker", "mypy_checker"]
 
     def test_unknown_role_raises(self) -> None:
         """Resolving an unknown role should raise KeyError."""
-        ra = RoleAssignment({
-            "requirement_review": "manager",
-            "planning": "manager",
-            "architecture": "manager",
-            "specification": "manager",
-            "implementation": "worker",
-            "verification": "worker",
-            "integration": "worker",
-        })
+        ra = RoleAssignment(
+            {
+                "requirement_review": "manager",
+                "planning": "manager",
+                "architecture": "manager",
+                "specification": "manager",
+                "implementation": "worker",
+                "verification": "worker",
+                "integration": "worker",
+            }
+        )
         # No unknown roles in the enum, but we can test that all known roles resolve
         for role in Role:
             agents = ra.resolve(role)
             assert len(agents) >= 1
 
     def test_to_dict(self) -> None:
-        ra = RoleAssignment({
-            "requirement_review": "manager",
-            "planning": "manager",
-            "architecture": "manager",
-            "specification": "manager",
-            "implementation": "worker",
-            "verification": "worker",
-            "integration": "worker",
-        })
+        ra = RoleAssignment(
+            {
+                "requirement_review": "manager",
+                "planning": "manager",
+                "architecture": "manager",
+                "specification": "manager",
+                "implementation": "worker",
+                "verification": "worker",
+                "integration": "worker",
+            }
+        )
         d = ra.to_dict()
         assert d["requirement_review"] == "manager"
         assert d["implementation"] == "worker"
@@ -185,19 +195,23 @@ class TestOrganizationLoader:
             org_dir = Path(tmpdir) / "organizations"
             org_dir.mkdir()
             profile_path = org_dir / "test_profile.yaml"
-            profile_path.write_text(yaml.dump({
-                "profile_name": "test_profile",
-                "description": "Test profile",
-                "assignment": {
-                    "requirement_review": "manager",
-                    "planning": "manager",
-                    "architecture": "manager",
-                    "specification": "manager",
-                    "implementation": "worker",
-                    "verification": "worker",
-                    "integration": "manager",
-                },
-            }))
+            profile_path.write_text(
+                yaml.dump(
+                    {
+                        "profile_name": "test_profile",
+                        "description": "Test profile",
+                        "assignment": {
+                            "requirement_review": "manager",
+                            "planning": "manager",
+                            "architecture": "manager",
+                            "specification": "manager",
+                            "implementation": "worker",
+                            "verification": "worker",
+                            "integration": "manager",
+                        },
+                    }
+                )
+            )
 
             # Set env var to point to temp dir
             old_env = os.environ.get("EKP_ORG_DIR")

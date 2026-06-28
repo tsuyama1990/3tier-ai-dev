@@ -90,10 +90,7 @@ class HintGenerator:
         if (
             diag.category == DiagnosticCategory.UNDEFINED_NAME
             or "has no attribute" in diag.message.lower()
-            or (
-                "module" in diag.message.lower()
-                and "not defined" in diag.message.lower()
-            )
+            or ("module" in diag.message.lower() and "not defined" in diag.message.lower())
         ):
             return self._handle_attribute_or_name_error(diag)
 
@@ -115,9 +112,7 @@ class HintGenerator:
     # Strategy 1: AttributeError / Undefined Name → Introspection
     # ------------------------------------------------------------------
 
-    def _handle_attribute_or_name_error(
-        self, diag: Diagnostic
-    ) -> Reference | None:
+    def _handle_attribute_or_name_error(self, diag: Diagnostic) -> Reference | None:
         """Use ``IntrospectionTool`` to resolve AttributeError/undefined name.
 
         Extracts module name from the diagnostic message, runs ``dir()``
@@ -191,9 +186,7 @@ class HintGenerator:
                         arg_annotation = ""
                         if arg.annotation:
                             arg_annotation = ast.unparse(arg.annotation)
-                        args.append(
-                            f"{arg.arg}: {arg_annotation}" if arg_annotation else arg.arg
-                        )
+                        args.append(f"{arg.arg}: {arg_annotation}" if arg_annotation else arg.arg)
 
                     returns = ""
                     if node.returns:
@@ -204,11 +197,7 @@ class HintGenerator:
                     return Reference(
                         reference_type="function_signature",
                         target=f"{diag.file}:{node.name}",
-                        content=(
-                            f"Function signature:\n{signature}\n\n"
-                            f"Error: {diag.message}\n"
-                            f"Line {diag.line}"
-                        ),
+                        content=(f"Function signature:\n{signature}\n\nError: {diag.message}\nLine {diag.line}"),
                         source_tool="hint_generator",
                     )
 
@@ -234,8 +223,7 @@ class HintGenerator:
             similar = [
                 m
                 for m in valid_modules
-                if import_name.lower() in m.lower()
-                or m.lower().startswith(import_name.lower()[:3])
+                if import_name.lower() in m.lower() or m.lower().startswith(import_name.lower()[:3])
             ]
             if similar:
                 suggestions = f"Did you mean: {', '.join(similar[:10])}?"
@@ -278,15 +266,57 @@ class HintGenerator:
 
         # Common stdlib modules
         stdlib = {
-            "os", "sys", "json", "re", "math", "datetime", "pathlib",
-            "typing", "collections", "functools", "itertools", "subprocess",
-            "hashlib", "base64", "abc", "enum", "dataclasses", "inspect",
-            "ast", "importlib", "threading", "multiprocessing", "io",
-            "textwrap", "string", "random", "statistics", "uuid",
-            "copy", "pprint", "logging", "warnings", "contextlib",
-            "fractions", "decimal", "socket", "email", "html", "http",
-            "urllib", "xml", "configparser", "csv", "gzip", "zipfile",
-            "tarfile", "tempfile", "shutil", "glob", "fnmatch", "linecache",
+            "os",
+            "sys",
+            "json",
+            "re",
+            "math",
+            "datetime",
+            "pathlib",
+            "typing",
+            "collections",
+            "functools",
+            "itertools",
+            "subprocess",
+            "hashlib",
+            "base64",
+            "abc",
+            "enum",
+            "dataclasses",
+            "inspect",
+            "ast",
+            "importlib",
+            "threading",
+            "multiprocessing",
+            "io",
+            "textwrap",
+            "string",
+            "random",
+            "statistics",
+            "uuid",
+            "copy",
+            "pprint",
+            "logging",
+            "warnings",
+            "contextlib",
+            "fractions",
+            "decimal",
+            "socket",
+            "email",
+            "html",
+            "http",
+            "urllib",
+            "xml",
+            "configparser",
+            "csv",
+            "gzip",
+            "zipfile",
+            "tarfile",
+            "tempfile",
+            "shutil",
+            "glob",
+            "fnmatch",
+            "linecache",
         }
         modules.update(stdlib)
 

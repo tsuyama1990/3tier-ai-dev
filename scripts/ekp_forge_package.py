@@ -59,17 +59,21 @@ def main() -> None:
         info = harvester.harvest(pkg)
         if info:
             path = harvester.save(info)
-            harvest_results.append({
-                "package": pkg,
-                "status": "harvested",
-                "path": str(path),
-            })
+            harvest_results.append(
+                {
+                    "package": pkg,
+                    "status": "harvested",
+                    "path": str(path),
+                }
+            )
         else:
-            harvest_results.append({
-                "package": pkg,
-                "status": "no_docs",
-                "path": None,
-            })
+            harvest_results.append(
+                {
+                    "package": pkg,
+                    "status": "no_docs",
+                    "path": None,
+                }
+            )
 
     # Output JSON summary (useful for MCP/API consumers)
     output = {"uv_exit_code": 0, "results": harvest_results}

@@ -107,17 +107,12 @@ class PatchValidator:
         fixed_imports = self._extract_imports(fixed_tree)
 
         if orig_imports != fixed_imports:
-            reasons.append(
-                f"Import statements were modified. "
-                f"Imports must remain unchanged during a targeted fix."
-            )
+            reasons.append("Import statements were modified. Imports must remain unchanged during a targeted fix.")
 
         # Check 3: For class methods, check class structure
         if "." in target_symbol:
             class_name, method_name = target_symbol.split(".", 1)
-            self._validate_class_method(
-                original_tree, fixed_tree, class_name, method_name, reasons
-            )
+            self._validate_class_method(original_tree, fixed_tree, class_name, method_name, reasons)
 
         if reasons:
             details = ";\n".join(reasons)
@@ -179,9 +174,7 @@ class PatchValidator:
             return
 
         if fixed_methods is None:
-            reasons.append(
-                f"Class '{class_name}' was removed from the fixed source."
-            )
+            reasons.append(f"Class '{class_name}' was removed from the fixed source.")
             return
 
         # Check removed methods
@@ -236,9 +229,7 @@ class PatchValidator:
         return imports
 
 
-def _extract_class_methods(
-    tree: ast.Module, class_name: str
-) -> list[str] | None:
+def _extract_class_methods(tree: ast.Module, class_name: str) -> list[str] | None:
     """Extract method names from a class definition.
 
     Args:

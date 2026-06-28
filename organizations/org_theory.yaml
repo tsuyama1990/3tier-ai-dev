@@ -1,0 +1,16 @@
+profile_name: "org_theory"
+description: >-
+  Full organizational-theory-based separation with Adversarial Reviewer gate
+  and Integrator Agent with global regression checks (mypy . + pytest .).
+  Uses Worker for implementation, Manager for planning/review, and the new
+  organizational gates for robustness auditing and safe integration.
+mode: production
+
+assignment:
+  requirement_review: "manager"
+  planning: "manager"
+  architecture: "manager"
+  specification: "manager"
+  implementation: "worker"
+  verification: "worker"
+  integration: "integrator"

@@ -125,13 +125,17 @@ def engine(simple_profile: OrganizationProfile, registry_with_mocks: AgentRegist
 class TestDispatcher:
     """Verify Dispatcher role-to-agent resolution."""
 
-    def test_resolve_single_agent(self, simple_profile: OrganizationProfile, registry_with_mocks: AgentRegistry) -> None:
+    def test_resolve_single_agent(
+        self, simple_profile: OrganizationProfile, registry_with_mocks: AgentRegistry
+    ) -> None:
         dispatcher = Dispatcher(simple_profile, registry_with_mocks)
         agents = dispatcher.resolve_agents(Role.REQUIREMENT_REVIEW)
         assert len(agents) == 1
         assert agents[0].agent_id == "manager"
 
-    def test_resolve_implementation(self, simple_profile: OrganizationProfile, registry_with_mocks: AgentRegistry) -> None:
+    def test_resolve_implementation(
+        self, simple_profile: OrganizationProfile, registry_with_mocks: AgentRegistry
+    ) -> None:
         dispatcher = Dispatcher(simple_profile, registry_with_mocks)
         agents = dispatcher.resolve_agents(Role.IMPLEMENTATION)
         assert len(agents) == 1
@@ -144,13 +148,17 @@ class TestDispatcher:
         with pytest.raises(ValueError, match="not registered"):
             dispatcher.resolve_agents(Role.REQUIREMENT_REVIEW)
 
-    def test_dispatch_returns_result(self, simple_profile: OrganizationProfile, registry_with_mocks: AgentRegistry) -> None:
+    def test_dispatch_returns_result(
+        self, simple_profile: OrganizationProfile, registry_with_mocks: AgentRegistry
+    ) -> None:
         dispatcher = Dispatcher(simple_profile, registry_with_mocks)
         results = dispatcher.dispatch(Role.REQUIREMENT_REVIEW, {"task": "test"})
         assert len(results) == 1
         assert results[0]["status"] == "accepted"
 
-    def test_dispatch_injects_role(self, simple_profile: OrganizationProfile, registry_with_mocks: AgentRegistry) -> None:
+    def test_dispatch_injects_role(
+        self, simple_profile: OrganizationProfile, registry_with_mocks: AgentRegistry
+    ) -> None:
         dispatcher = Dispatcher(simple_profile, registry_with_mocks)
         results = dispatcher.dispatch(Role.IMPLEMENTATION, {"task": "test"})
         assert len(results) == 1
@@ -188,12 +196,15 @@ class TestWorkflowEngine:
         assert impl["status"] == "success"
 
         # Phase 3: Integration
-        integration = engine.run(Role.INTEGRATION, {
-            "task": "task1",
-            "impl_result": impl,
-            "error_chunk_summary": None,
-            "git_diff": impl.get("git_diff", ""),
-        })
+        integration = engine.run(
+            Role.INTEGRATION,
+            {
+                "task": "task1",
+                "impl_result": impl,
+                "error_chunk_summary": None,
+                "git_diff": impl.get("git_diff", ""),
+            },
+        )
         assert integration["status"] == "success"
         assert integration["adr_path"] == "/tmp/test_adr.md"
 
@@ -323,6 +334,7 @@ class TestWorkflowEngineRunAll:
 
 class MockTask:
     """Minimal mock TaskSchema for testing."""
+
     task_id = "T-20260627000000-abcdef"
     manager_id = "MGR-001"
     goal = "Test task"
@@ -418,18 +430,26 @@ class TestFixPlannerIntegration:
 
         diagnostics = [
             Diagnostic(
-                tool="pytest", severity=DiagnosticSeverity.ERROR,
-                file="tests/test_main.py", message="Test failed",
+                tool="pytest",
+                severity=DiagnosticSeverity.ERROR,
+                file="tests/test_main.py",
+                message="Test failed",
                 category=DiagnosticCategory.TEST_FAILURE,
             ),
             Diagnostic(
-                tool="mypy", severity=DiagnosticSeverity.ERROR,
-                file="src/test.py", line=5, message="Type error",
+                tool="mypy",
+                severity=DiagnosticSeverity.ERROR,
+                file="src/test.py",
+                line=5,
+                message="Type error",
                 category=DiagnosticCategory.TYPE_MISMATCH,
             ),
             Diagnostic(
-                tool="ruff", severity=DiagnosticSeverity.ERROR,
-                file="src/test.py", line=1, message="Syntax error",
+                tool="ruff",
+                severity=DiagnosticSeverity.ERROR,
+                file="src/test.py",
+                line=1,
+                message="Syntax error",
                 category=DiagnosticCategory.SYNTAX,
             ),
         ]

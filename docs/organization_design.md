@@ -76,10 +76,10 @@ flowchart TD
 | **2. Design** | **Architect** | Architecture / Interface | Generates Architecture Decision Records (ADRs), defines public interfaces, and updates package-level specifications. |
 | | **Task Planner** | Execution / Scoping | Decomposes ADRs and specifications into isolated, parallelizable subtasks mapped to target files. |
 | | **Architect Approval** | ADR Compliance | Deterministic cross-reference between plan text tokens and ADR decision sections. If a violation is found (e.g., plan proposes "Redis" but ADR specifies `CacheProvider`), the plan is regenerated with violation context. |
-| **3. Implementation** | **Worker Agent** | Local Implementation | Performs raw code modifications inside an isolated sandbox. Iterates via aider's self-healing loop. Adversarial testing removed from this phase. |
-| | **Verification (MVG)** | Gatekeeper / QA | Validates code style (Ruff), type soundness (Mypy), whitelist imports (AST Gatekeeper), and behavior (pytest). |
-| **4. Adversarial** | **Adversarial Reviewer** | Edge Case / Robustness | Independent gate after Worker verification. Generates edge-case tests (LLM-driven), runs them in sandbox. Failures are **warnings, not blockers**. |
-| **5. Integration** | **Integrator Agent** | System Reviewer | Merges changes to main tree, then runs global `mypy .` and `pytest` for cross-module regression. If either fails, **reverts the merge** and returns error log to Worker/Planner. |
+| **3. Implementation** | **Worker Agent** | Local Implementation | Performs raw code modifications inside an isolated git-worktree. Iterates via aider's self-healing loop. Adversarial testing removed from this phase. |
+| | **Verification (MVG)** | Gatekeeper / QA | Validates code style (Ruff), type soundness (Mypy), whitelist imports (AST Gatekeeper), and behavior (pytest) via the Verification IR pipeline. |
+| **4. Adversarial** | **Adversarial Reviewer** | Edge Case / Robustness | Independent gate after Worker verification. AST-based edge-case test generation (None, empty, boundary inputs), runs in isolated subprocesses. Failures are **warnings, not blockers**. |
+| **5. Integration** | **Integrator Agent** | System Reviewer | Backups affected files → applies `git apply` diff → runs global `mypy .` and `pytest` for cross-module regression. If either fails, **restores file-level backups** and returns error log. |
 | **6. Review** | **Product Reviewer** | User / Acceptance | Runs full validation against initial PM acceptance criteria, ensuring alignment with the original request. |
 
 ---

@@ -422,12 +422,14 @@ def search_knowledge_base(
             sections = content.split("## ")
             excerpt = sections[1][:300] if len(sections) > 1 else content[:300]
 
-            results.append({
-                "package": package_name,
-                "relevance": round(score, 4),
-                "excerpt": excerpt,
-                "filepath": str(md_file),
-            })
+            results.append(
+                {
+                    "package": package_name,
+                    "relevance": round(score, 4),
+                    "excerpt": excerpt,
+                    "filepath": str(md_file),
+                }
+            )
 
     results.sort(key=lambda r: r["relevance"], reverse=True)
     return results[:top_k]

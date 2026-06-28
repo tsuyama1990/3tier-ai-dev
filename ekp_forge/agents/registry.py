@@ -240,11 +240,7 @@ class AgentRegistry:
         Includes agent type, capabilities, and execution tier.
         """
         return {
-            aid: (
-                f"{type(agent).__name__}"
-                f"(caps={[c.value for c in agent.capabilities]}, "
-                f"tier={agent.execution_tier})"
-            )
+            aid: (f"{type(agent).__name__}(caps={[c.value for c in agent.capabilities]}, tier={agent.execution_tier})")
             for aid, agent in self._agents.items()
         }
 
@@ -260,8 +256,5 @@ class AgentRegistry:
         return len(self._agents)
 
     def __repr__(self) -> str:
-        agents = ", ".join(
-            f"{aid}: {type(a).__name__}(tier={a.execution_tier})"
-            for aid, a in self._agents.items()
-        )
+        agents = ", ".join(f"{aid}: {type(a).__name__}(tier={a.execution_tier})" for aid, a in self._agents.items())
         return f"AgentRegistry({agents})"

@@ -25,28 +25,26 @@
 
 ## 1. Overview
 
-EKP-Forge addresses two fundamental problems in AI-assisted development:
+EKP-Forge is a **multi-agent orchestration framework** that safely delegates AI-assisted development through an isolated, role-based pipeline. It implements organizational-theory-based principles — division of labor, independent auditing, and principal-agent alignment — to ensure code integration safety.
 
-1. **Hallucination in RAG**: Traditional RAG systems rely on static documentation that may be outdated or incorrect. The **Dependency Semantic Compiler (DSC)** solves this by extracting, verifying, and compiling knowledge assets directly from working code, assigning **Trust Scores** to each asset type:
+The architecture addresses two fundamental problems in AI-assisted development:
 
-   | Information Source | Trust Score | Role |
-   |---|---|---|
-   | Smoke Tests (`tests/`) | **1.0** | Absolute truth — prioritized interface definitions |
-   | Examples (`examples/`) | **0.9** | Verified implementation templates |
-   | Type/Docstring (`*.pyi`) | **0.7** | Static type constraints (no semantics) |
-   | README (`*.md`) | **0.4** | Conceptual understanding only |
+1. **Unsafe Code Generation**: AI coding agents can accidentally damage repositories, overwrite configuration, or introduce hallucinated dependencies. The **Safe Factory** architecture solves this by isolating code generation inside a sandbox with strict verification gates before integration, plus an **Integrator Agent** with global regression checks and automatic rollback.
 
-2. **Unsafe Code Generation**: AI coding agents can accidentally damage repositories, overwrite configuration, or introduce hallucinated dependencies. The **Safe Factory** architecture solves this by isolating code generation inside a temporary sandbox with strict verification gates before integration.
+2. **No Independent Auditing**: Without separation of concerns, the same agent that writes code also verifies it, creating blind spots. EKP-Forge introduces an **Adversarial Reviewer** gate (edge-case robustness, non-blocking warnings) and an **Integrator Agent** (global `mypy .` + `pytest .` with rollback) between the Worker and the host repository.
 
 ### Core Concepts
 
 | Concept | Description |
 |---------|-------------|
-| **DSC Pipeline** | 5-stage compiler that extracts, traces, synthesizes, and deploys executable knowledge from verified code |
-| **EKP-Forge** | Multi-agent orchestration framework with 7-phase pipeline for safe, verified AI-assisted development |
-| **Safe Factory** | Sandbox isolation system that prevents Worker agents from damaging the host repository |
+| **EKP-Forge** | Multi-agent orchestration framework with 7-role pipeline for safe, verified AI-assisted development |
+| **Safe Factory** | Sandbox isolation via `git worktree` (millisecond-fast) that prevents Worker agents from damaging the host repository |
+| **Role-based Protocol** | 7 standard roles (RequirementReview → Planning → Architecture → **Specification** → Implementation → Verification → Integration) with capability-based agent dispatch |
+| **Contract-Driven Pipeline** | Manager generates a `WorkerContract` (Pydantic schema) in the Specification phase; Worker implements only the contracted interface; Manager semantically validates compliance via DeepSeek |
+| **Function Slicing** | LibCST-based `FunctionSlicer` extracts/injects individual functions for isolated Worker edits, preventing collateral damage |
+| **Integrator Agent** | Independent auditor that applies Worker diffs to the host repo, runs global `mypy .` + `pytest .`, and rolls back on regression |
+| **Adversarial Reviewer** | Independent gate that tests code robustness against edge cases (None, empty, boundary inputs) with non-blocking warnings |
 | **AST Gatekeeper (MVG)** | Deterministic import whitelist validation using Python AST parsing |
-| **Trust Score** | Quantified reliability metric for knowledge assets, from 0.0 (untrusted) to 1.0 (verified) |
 
 ---
 
@@ -54,61 +52,78 @@ EKP-Forge addresses two fundamental problems in AI-assisted development:
 
 ```
 ekp-forge/
-├── dsc/                              # Dependency Semantic Compiler (knowledge compilation)
-│   ├── package_inspector.py          # Stage 1: Detect installed packages & versions
-│   ├── source_miner.py               # Stage 2: Clone & extract tests/examples from repos
-│   ├── smoke_tracer.py               # Stage 3: Execute minimal interface initialization tests
-│   ├── asset_synthesizer.py          # Stage 4: Generate semantic graph assets
-│   ├── deploy.py                     # Stage 5: Deploy assets to target projects
-│   ├── config.py                     # Configuration utilities
-│   └── utils.py                      # Shared utilities
-│
 ├── ekp_forge/                        # EKP-Forge orchestration framework
 │   ├── __init__.py                   # Package entry point
-│   ├── orchestrator.py               # Core orchestrator: Ruff/Mypy setup, import validation, pytest runner
-│   ├── orchestrator_api.py           # Public API for 3-tier development pipeline
+│   ├── mcp_server.py                 # MCP server exposing 5 tools for AI agent delegation
 │   ├── manager.py                    # Manager Agent: triage, validation, ADR generation
 │   ├── worker.py                     # Worker Agent: Aider execution + verification loop
-│   ├── mcp_server.py                 # MCP server exposing tools for AI agent delegation
-│   ├── adversarial_tester.py         # Adversarial Reviewer: edge-case test generation
-│   ├── rag_crawler.py                # Assumption RAG Crawler: semantic ADR conflict detection
+│   ├── orchestrator.py               # Ruff/Mypy setup, lint/type-check runners
+│   ├── rag_crawler.py                # Assumption RAG Crawler: TF-IDF ADR conflict detection
 │   ├── task_tree.py                  # TaskTree: parallel subtask execution
 │   │
-│   ├── sandbox/                      # Safe Factory sandbox system
-│   │   ├── workspace.py              # Isolated temporary workspace (context manager)
-│   │   ├── cloner.py                 # Clone/copy project into sandbox
-│   │   ├── integrator.py             # Copy verified changes back + cross-module regression
-│   │   ├── config_agent.py           # Safe TOML/YAML configuration modification
-│   │   ├── constraints.py            # Path allow/deny rules for sandbox copying
-│   │   ├── verification.py           # Sandbox-scoped Ruff + Mypy wrappers
-│   │   ├── scoped_lint.py            # Git-diff-scoped linting (changed files only)
-│   │   ├── architect_review.py       # Deterministic ADR compliance check (non-LLM)
-│   │   └── success_patterns.py       # Success Pattern DB: reusable verified diffs
+│   ├── agents/                       # Agent base classes and registry
+│   │   ├── base.py                   # BaseAgent abstract class
+│   │   └── registry.py               # AgentRegistry + CapabilityRegistry
 │   │
-│   └── schemas/
-│       └── task_schema.py            # Pydantic models: TaskSchema, HelpRequest, ErrorChunk, etc.
+│   ├── engine/                       # Workflow orchestration engine
+│   │   ├── workflow.py               # WorkflowEngine: central role dispatcher
+│   │   ├── dispatcher.py             # Role → agent resolution (capability-first)
+│   │   ├── fix_planner.py            # Fix Planner for Phase 2/4 fix loops
+│   │   └── tiered_diagnostic.py      # Tiered Diagnostic (Ruff → Mypy → Pytest)
+│   │
+│   ├── protocol/                     # Role-based Protocol Architecture
+│   │   ├── roles.py                  # 7 standard Role enum values
+│   │   ├── capability.py             # Capability enum + ROLE_REQUIRED_CAPABILITIES
+│   │   └── assignment.py             # RoleAssignment + OrganizationProfile + YAML loader
+│   │
+│   ├── sandbox/                      # Safe Factory sandbox system
+│   │   ├── integrator.py             # IntegratorAgent: git apply + global mypy/pytest + rollback
+│   │   ├── adversarial_reviewer.py   # AdversarialReviewer: edge-case robustness audit
+│   │   ├── constraints.py            # Path allow/deny rules for sandbox copying
+│   │   ├── git_worktree.py           # Fast isolated workspace via git worktree (replaces cloner + workspace)
+│   │   ├── scoped_lint.py            # Git-diff-scoped linting (changed/untracked files only)
+│   │   ├── architect_review.py       # Deterministic ADR compliance check (non-LLM)
+│   │   ├── success_patterns.py       # Success Pattern DB: reusable verified diffs
+│   │   ├── patch_validator.py        # Scope-violation detection for Worker fixes
+│   │   ├── slicer.py                 # LibCST function-level isolation (extract/inject)
+│   │   ├── hint_generator.py         # Deterministic error-type hints (Phase 4)
+│   │   ├── introspection.py          # dir()/help() sandboxed introspection
+│   │   └── verification_ir.py        # Verification IR pipeline (Ruff → Mypy → Pytest parser)
+│   │
+│   ├── schemas/
+│   │   ├── task_schema.py            # Pydantic models: TaskSchema, HelpRequest, ErrorChunk, etc.
+│   │   └── contract.py               # WorkerContract, Diagnostic, FixTask, FixTaskV2
+│   │
+│   └── knowledge/
+│       └── harvester.py              # Knowledge harvesting from external packages
 │
 ├── tests/                            # Comprehensive test suites
-│   ├── conftest.py                   # Test configuration
-│   ├── test_e2e.py                   # End-to-end pipeline verification
+│   ├── conftest.py                   # Test configuration (sys.path setup)
 │   ├── test_manager.py               # Manager Agent tests
 │   ├── test_worker.py                # Worker Agent tests
-│   ├── test_orchestrator.py          # Orchestrator self-healing tests
-│   ├── test_orchestrator_api.py      # Orchestrator API tests
+│   ├── test_agent_registry.py        # AgentRegistry + capability tests
+│   ├── test_organization_improvements.py  # IntegratorAgent + AdversarialReviewer TDD tests
+│   ├── test_contract.py              # Contract schema tests
+│   ├── test_contract_pipeline.py     # Contract-driven pipeline tests
+│   ├── test_fix_planner.py           # Fix Planner tests
+│   ├── test_introspection.py         # Introspection tool tests
+│   ├── test_knowledge_harvester.py   # Knowledge harvester tests
 │   ├── test_mcp_server.py            # MCP server tests
-│   ├── test_sandbox_components.py    # Sandbox module tests
-│   ├── test_adversarial_tester.py    # Adversarial testing tests
+│   ├── test_protocol_roles.py        # Protocol/role assignment tests
 │   ├── test_rag_crawler.py           # RAG crawler tests
-│   ├── test_task_tree.py             # Task tree tests
 │   ├── test_schemas.py               # Schema validation tests
-│   ├── test_asset_synthesizer.py     # DSC asset synthesis tests
-│   ├── test_smoke_tracer.py          # DSC smoke tracer tests
-│   ├── test_deploy.py                # DSC deployment tests
-│   ├── test_calc.py                  # Calculator test utility
+│   ├── test_task_tree.py             # Task tree tests
+│   ├── test_verification_ir.py       # Verification IR pipeline tests
+│   ├── test_workflow_engine.py       # WorkflowEngine + Dispatcher tests
 │   ├── step1_baseline/               # Ollama baseline communication tests
 │   ├── step2_fake_api/               # Fake API reference adherence tests
-│   ├── step3_stress/                 # Self-healing loop stress tests
-│   └── step4_ollama_synthesizer/     # Ollama-integrated synthesizer tests
+│   └── step3_stress/                 # Self-healing loop stress tests
+│
+├── organizations/                    # Organization profile YAMLs
+│   ├── simple.yaml                   # Single Worker + Manager oversight
+│   ├── three_tier.yaml               # Classic 3-tier separation
+│   ├── enterprise.yaml               # Full 7-role separation
+│   └── org_theory.yaml               # Organizational-theory-based with Integrator + Adversarial
 │
 ├── docs/
 │   ├── detailed_guide.md             # Detailed MCP, Aider, configuration manual
@@ -116,83 +131,26 @@ ekp-forge/
 │
 ├── plans/                            # Architecture & improvement plans
 │   ├── safe_factory_architecture.md  # Safe Factory design document
-│   └── review_driven_improvements.md # Review-driven architecture improvements (88→90+ pts)
+│   ├── review_driven_improvements.md # Review-driven architecture improvements
+│   ├── phase4_contract_driven_repair_detailed_design.md  # Phase 4 design
+│   ├── organizational_theory_improvements_detailed_design.md  # Org-theory design
+│   └── ...                           # Additional planning documents
 │
 ├── decisions/                        # Architecture Decision Records (ADRs)
-├── .ai-knowledge/                    # Local knowledge asset cache
 ├── api_schema.yaml                   # MVG import whitelist
 ├── mcp_config.json                   # MCP server configuration
 ├── pyproject.toml                    # Project configuration (Ruff, Mypy settings)
 ├── run-mcp.sh                        # MCP server launcher (aider-orchestrator)
-├── run-mcp-ekp.sh                    # MCP server launcher (ekp-forge-manager, DeepSeek API)
+├── run-mcp-ekp.sh                    # MCP server launcher (ekp-forge-manager)
+├── run_aider_mcp.py                  # Aider MCP bridge utility
 ├── skills.md                         # Executable skill definitions for AI agents
 ├── .cursorrules                      # Workspace rules for AI coding agents
 └── README.md                         # This file
 ```
 
-### Global Cache Architecture
-
-```
-~/.knowledge-cache/                   # Version-isolated global knowledge cache
-├── {package_name}/
-│   └── {version}/
-│       ├── integration_graph.md      # API dependency table by module
-│       ├── workflow_graph.md         # Cross-library workflow graph with code examples
-│       ├── verified_examples/        # Trust Score ≥ 0.9 code
-│       └── verified_tests/           # Smoke tests (Trust Score 1.0)
-```
-
 ---
 
-## 3. DSC Pipeline (Knowledge Compilation)
-
-The **Dependency Semantic Compiler** extracts, verifies, and packages knowledge from working code into reusable assets. It operates in 5 stages:
-
-### Stage 1: Package Inspector
-[`dsc/package_inspector.py`](dsc/package_inspector.py)
-
-Scans the project's `.venv` to identify installed packages with exact versions and VCS source origins. Outputs a JSON manifest.
-
-### Stage 2: Source & CI Miner
-[`dsc/source_miner.py`](dsc/source_miner.py)
-
-Clones target repositories using a tiered sparse-checkout strategy to extract `tests/` and `examples/` directories, storing them in the global cache.
-
-### Stage 3: Smoke Tracer
-[`dsc/smoke_tracer.py`](dsc/smoke_tracer.py)
-
-Executes minimal interface initialization snippets in subprocess isolation. Skips full test suites (avoids CUDA/MPI dependency failures). Assigns Trust Scores based on execution success.
-
-### Stage 4: Asset Synthesizer
-[`dsc/asset_synthesizer.py`](dsc/asset_synthesizer.py)
-
-Generates semantic graph assets:
-
-- **`integration_graph.md`** — API surface tables, class dependencies, and method constraints for individual packages
-- **`workflow_graph.md`** — Cross-library data flow, parameter constraints, and type conversion rules
-
-**Modes:**
-- **Offline (`--no-llm`)** — Fast, AST-based generation of API surface tables
-- **LLM (`--llm`)** — Semantic enrichment via OpenRouter (default: `deepseek/deepseek-v4-flash`)
-- **Ollama (`--llm-provider ollama`)** — Local LLM integration for graph synthesis
-
-### Stage 5: Deployer
-[`dsc/deploy.py`](dsc/deploy.py)
-
-Deploys cached assets to target projects via **Hard Copy** (no symlinks):
-
-| Global Cache | → | Project Local |
-|---|---|---|
-| `integration_graph.md` | → | `.ai-knowledge/{package}.md` |
-| `workflow_graph.md` | → | `.ai-knowledge/workflow_graph.md` (merged) |
-| `verified_examples/` | → | `verified_examples/` |
-| `verified_tests/` | → | `verified_tests/` |
-
-Automatically updates `api_schema.yaml` with package import whitelist entries, preserving user-defined entries.
-
----
-
-## 4. EKP-Forge Multi-Agent Architecture (v4.1)
+## 3. EKP-Forge Multi-Agent Architecture (v4.1)
 
 EKP-Forge implements a **7-phase, phase-isolated** multi-agent pipeline that transitions from monolithic agent patterns to a distributed, high-redundancy verification system. The architecture scores **88-90 points** in architectural review, with targeted improvements documented in [`plans/review_driven_improvements.md`](plans/review_driven_improvements.md).
 
@@ -263,9 +221,9 @@ flowchart TD
 | | **Task Planner** | [`manager.py`](ekp_forge/manager.py) | Execution / Scoping | Isolated subtask checklists |
 | | **Architect Approval** | [`sandbox/architect_review.py`](ekp_forge/sandbox/architect_review.py) | ADR Compliance | Deterministic token-based cross-reference |
 | **3. Implementation** | **Worker Agent** | [`worker.py`](ekp_forge/worker.py) | Local Implementation | Aider code gen + self-healing loop |
-| | **Verification (MVG)** | [`orchestrator.py`](ekp_forge/orchestrator.py) + [`sandbox/verification.py`](ekp_forge/sandbox/verification.py) | Gatekeeper / QA | Ruff, Mypy, AST import validation, pytest |
-| **4. Adversarial** | **Adversarial Reviewer** | [`adversarial_tester.py`](ekp_forge/adversarial_tester.py) | Edge Case | LLM-generated edge-case tests (warnings, not blockers) |
-| **5. Integration** | **Integrator Agent** | [`sandbox/integrator.py`](ekp_forge/sandbox/integrator.py) | System Reviewer | File merge + global regression tests |
+| | **Verification (MVG)** | [`worker.py`](ekp_forge/worker.py) + [`sandbox/verification_ir.py`](ekp_forge/sandbox/verification_ir.py) | Gatekeeper / QA | Ruff, Mypy, AST import validation, pytest |
+| **4. Adversarial** | **Adversarial Reviewer** | [`sandbox/adversarial_reviewer.py`](ekp_forge/sandbox/adversarial_reviewer.py) | Edge Case | AST-based edge-case tests (warnings, not blockers) |
+| **5. Integration** | **Integrator Agent** | [`sandbox/integrator.py`](ekp_forge/sandbox/integrator.py) | System Reviewer | git apply + global mypy/pytest + rollback on failure |
 | **6. Review** | **Product Reviewer** | [`manager.py`](ekp_forge/manager.py) | Acceptance | Full validation against acceptance criteria |
 
 ### Key Components
@@ -273,14 +231,15 @@ flowchart TD
 | Component | Module | Description |
 |---|---|---|
 | **Manager Agent** | [`manager.py`](ekp_forge/manager.py) | Task triage, assumption validation (via RAG Crawler), ADR generation, help request handling |
-| **Worker Agent** | [`worker.py`](ekp_forge/worker.py) | Executes Aider in isolated sandbox with verification loop, auto-healing, and escalation |
-| **AST Gatekeeper (MVG)** | [`orchestrator.py`](ekp_forge/orchestrator.py) | Validates imports against `api_schema.yaml` whitelist using AST parsing. Blocks `eval()`/`exec()`/`compile()` |
+| **Worker Agent** | [`worker.py`](ekp_forge/worker.py) | Executes Aider in git-worktree isolated workspace with verification loop, auto-healing, and escalation |
+| **Integrator Agent** | [`sandbox/integrator.py`](ekp_forge/sandbox/integrator.py) | Backups affected files → `git apply` diff → runs global `mypy .` + `pytest .` → commits or rolls back |
+| **Adversarial Reviewer** | [`sandbox/adversarial_reviewer.py`](ekp_forge/sandbox/adversarial_reviewer.py) | AST-based edge-case generation and isolated subprocess execution; returns non-blocking warnings |
+| **AST Gatekeeper (MVG)** | [`worker.py`](ekp_forge/worker.py) (`_validate_imports`) | Validates imports against `api_schema.yaml` whitelist using AST parsing. Blocks `eval()`/`exec()`/`compile()` |
 | **RAG Crawler** | [`rag_crawler.py`](ekp_forge/rag_crawler.py) | TF-IDF semantic search over ADR `decisions/` for assumption conflict detection |
 | **Task Tree** | [`task_tree.py`](ekp_forge/task_tree.py) | Thread-safe parallel executor for decomposed subtask dependency trees |
-| **Adversarial Tester** | [`adversarial_tester.py`](ekp_forge/adversarial_tester.py) | LLM-driven edge-case test generation and execution after Worker verification |
 | **Architect Review** | [`sandbox/architect_review.py`](ekp_forge/sandbox/architect_review.py) | Deterministic (non-LLM) ADR compliance check — prevents Task Planner from deviating from architecture decisions |
 | **Success Pattern DB** | [`sandbox/success_patterns.py`](ekp_forge/sandbox/success_patterns.py) | Stores verified diffs as reusable templates for future plan generation |
-| **Orchestrator API** | [`orchestrator_api.py`](ekp_forge/orchestrator_api.py) | Public API (`run_3tier_dev`) for invoking the full sandbox pipeline programmatically |
+| **WorkflowEngine** | [`engine/workflow.py`](ekp_forge/engine/workflow.py) | Central role dispatcher with shared context; supports Phase 2 fix loop and Phase 4 contract-driven repair |
 
 ---
 
@@ -328,13 +287,17 @@ flowchart TD
 
 | Component | File | Description |
 |---|---|---|
-| **SandboxWorkspace** | [`sandbox/workspace.py`](ekp_forge/sandbox/workspace.py) | Context manager creating/cleaning temporary directory with whitelisted file copy |
+| **Integrator Agent** | [`sandbox/integrator.py`](ekp_forge/sandbox/integrator.py) | Backups affected files → `git apply` diff → runs global `mypy .` + `pytest .` → on success: commit + ADR; on failure: restore backups |
+| **Adversarial Reviewer** | [`sandbox/adversarial_reviewer.py`](ekp_forge/sandbox/adversarial_reviewer.py) | AST-based edge-case generation (None, empty, boundary) → isolated subprocess execution → non-blocking warnings |
+| **GitWorktree** | [`sandbox/git_worktree.py`](ekp_forge/sandbox/git_worktree.py) | Millisecond-fast isolated workspace via `git worktree add` (replaces slow clone) |
+| **SandboxWorkspace** | [`sandbox/workspace.py`](ekp_forge/sandbox/workspace.py) | Context manager creating/cleaning temporary directory with whitelisted file copy (legacy) |
 | **Cloner Agent** | [`sandbox/cloner.py`](ekp_forge/sandbox/cloner.py) | Shallow git clone or fallback file copy into sandbox. Filters by `is_path_allowed` |
 | **Constraints** | [`sandbox/constraints.py`](ekp_forge/sandbox/constraints.py) | Deny rules: `.venv`, `__pycache__`, `.git`, `pyproject.toml` (protected), `mcp_config.json` |
-| **Config Agent** | [`sandbox/config_agent.py`](ekp_forge/sandbox/config_agent.py) | Safe TOML modification via structured `ConfigChangeRequest` — prevents regex-based corruption |
-| **Verification** | [`sandbox/verification.py`](ekp_forge/sandbox/verification.py) | CWD-scoped Ruff + Mypy execution inside sandbox |
 | **Scoped Lint** | [`sandbox/scoped_lint.py`](ekp_forge/sandbox/scoped_lint.py) | Git-diff-scoped linting — only checks changed files |
-| **Integrator Agent** | [`sandbox/integrator.py`](ekp_forge/sandbox/integrator.py) | Copies verified files back, runs global `mypy .` + `pytest`, reverts on regression failure |
+| **Patch Validator** | [`sandbox/patch_validator.py`](ekp_forge/sandbox/patch_validator.py) | AST-based scope-violation detection for Worker fixes (Phase 4) |
+| **Verification IR** | [`sandbox/verification_ir.py`](ekp_forge/sandbox/verification_ir.py) | Unified verification pipeline: auto-fix → Ruff → Mypy → Pytest with structured Diagnostic output |
+| **Architect Review** | [`sandbox/architect_review.py`](ekp_forge/sandbox/architect_review.py) | Deterministic (non-LLM) ADR compliance check |
+| **Success Pattern DB** | [`sandbox/success_patterns.py`](ekp_forge/sandbox/success_patterns.py) | Stores verified diffs as reusable templates |
 
 ### Safety Guarantees
 
@@ -451,54 +414,45 @@ uv sync
 pip install -e .
 ```
 
-### DSC Pipeline (Knowledge Compilation)
+### Run Test Suite
 
 ```bash
-# Stage 1: Inspect & generate manifest
-python3 dsc/package_inspector.py --project /path/to/project --target mesa --output manifest.json
-
-# Stage 2: Mine & cache repository examples
-python3 dsc/source_miner.py --manifest manifest.json
-
-# Stage 3: Run smoke verification traces
-python3 dsc/smoke_tracer.py --manifest manifest.json
-
-# Stage 4: Synthesize semantic assets
-# Offline mode (default)
-python3 dsc/asset_synthesizer.py --manifest manifest.json --no-llm
-# LLM mode (requires OPENROUTER_API_KEY)
-python3 dsc/asset_synthesizer.py --manifest manifest.json --llm
-# Ollama mode (local)
-python3 dsc/asset_synthesizer.py --manifest manifest.json --llm-provider ollama
-
-# Stage 5: Deploy to target project
-python3 dsc/deploy.py --project /path/to/project --packages mesa
-```
-
-### EKP-Forge Orchestration (Programmatic API)
-
-```python
-from ekp_forge.orchestrator_api import run_3tier_dev
-
-result = run_3tier_dev(
-    prompt="Add input validation to the login function",
-    target_pkg="myapp",
-    target_files=["src/auth.py"],
-    model="ollama/qwen2.5-coder:7b",
-)
-print(result)  # {"success": True, "status": "ok", ...}
+# Run all tests (excluding tests that require external dependencies like libcst)
+python3 -m pytest tests/ \
+  --ignore=tests/test_contract_pipeline.py \
+  --ignore=tests/test_fix_planner.py \
+  --ignore=tests/test_mcp_server.py \
+  --ignore=tests/test_task_tree.py \
+  --ignore=tests/test_workflow_engine.py \
+  -v
 ```
 
 ### MCP Server (For AI Agent Delegation)
 
 ```bash
+# Aider MCP bridge (Worker-tier code generation)
 ./run-mcp.sh
+
+# EKP-Forge Manager MCP (full pipeline with DeepSeek Manager)
+./run-mcp-ekp.sh
 ```
 
-### Sandbox Pipeline (MCP Server)
+### Using the Organization Profiles
+
+Set the `EKP_PROFILE` environment variable to select the organization profile:
 
 ```bash
-./run-mcp.sh
+# Simple profile (default): Manager + Worker
+export EKP_PROFILE=simple
+
+# Three-tier: Manager plans, Worker implements, Manager integrates
+export EKP_PROFILE=three_tier
+
+# Org-theory: Full pipeline with Adversarial Reviewer + Integrator Agent
+export EKP_PROFILE=org_theory
+
+# Enterprise: Full 7-role separation (requires all agents registered)
+export EKP_PROFILE=enterprise
 ```
 
 ---
@@ -508,31 +462,39 @@ print(result)  # {"success": True, "status": "ok", ...}
 All test suites reside in the [`tests/`](tests/) directory. Run with pytest:
 
 ```bash
-pytest -v --ignore=tests/step4_ollama_synthesizer/fixtures/
+# Run all tests (except those needing external deps like libcst)
+python3 -m pytest tests/ \
+  --ignore=tests/test_contract_pipeline.py \
+  --ignore=tests/test_fix_planner.py \
+  --ignore=tests/test_mcp_server.py \
+  --ignore=tests/test_task_tree.py \
+  --ignore=tests/test_workflow_engine.py \
+  -v
 ```
 
 ### Test Suites
 
 | Test Suite | File | Description |
 |---|---|---|
-| **End-to-End** | [`tests/test_e2e.py`](tests/test_e2e.py) | Full pipeline verification across all phases |
 | **Manager Agent** | [`tests/test_manager.py`](tests/test_manager.py) | Task triage, ADR generation, challenge agent |
 | **Worker Agent** | [`tests/test_worker.py`](tests/test_worker.py) | Aider execution, verification loop, auto-healing, escalation |
-| **Orchestrator** | [`tests/test_orchestrator.py`](tests/test_orchestrator.py) | Self-healing loop, test runner, cleanup |
-| **Orchestrator API** | [`tests/test_orchestrator_api.py`](tests/test_orchestrator_api.py) | `run_3tier_dev` public API |
-| **MCP Server** | [`tests/test_mcp_server.py`](tests/test_mcp_server.py) | MCP tool endpoints |
-| **Sandbox Components** | [`tests/test_sandbox_components.py`](tests/test_sandbox_components.py) | Workspace, cloner, integrator, constraints, config agent |
-| **Adversarial Tester** | [`tests/test_adversarial_tester.py`](tests/test_adversarial_tester.py) | Edge case generation and execution |
+| **Agent Registry** | [`tests/test_agent_registry.py`](tests/test_agent_registry.py) | BaseAgent, CapabilityRegistry, AgentRegistry |
+| **Workflow Engine** | [`tests/test_workflow_engine.py`](tests/test_workflow_engine.py) | WorkflowEngine, Dispatcher, FixPlanner (requires libcst) |
+| **Organization Improvements** | [`tests/test_organization_improvements.py`](tests/test_organization_improvements.py) | IntegratorAgent backup/restore + AdversarialReviewer edge-case audit |
+| **Protocol Roles** | [`tests/test_protocol_roles.py`](tests/test_protocol_roles.py) | RoleAssignment, OrganizationProfile, YAML loading |
+| **Schemas** | [`tests/test_schemas.py`](tests/test_schemas.py) | TaskSchema, HelpRequest, ErrorChunk validation |
+| **Contracts** | [`tests/test_contract.py`](tests/test_contract.py) | WorkerContract, Diagnostic, FixTask schemas |
+| **Contract Pipeline** | [`tests/test_contract_pipeline.py`](tests/test_contract_pipeline.py) | Contract-driven repair pipeline (requires libcst) |
+| **Fix Planner** | [`tests/test_fix_planner.py`](tests/test_fix_planner.py) | Fix Planner logic (requires libcst) |
+| **Verification IR** | [`tests/test_verification_ir.py`](tests/test_verification_ir.py) | Ruff/Mypy/Pytest IR pipeline |
+| **Introspection** | [`tests/test_introspection.py`](tests/test_introspection.py) | Sandboxed introspection tool |
+| **Knowledge Harvester** | [`tests/test_knowledge_harvester.py`](tests/test_knowledge_harvester.py) | Knowledge harvesting from external packages |
 | **RAG Crawler** | [`tests/test_rag_crawler.py`](tests/test_rag_crawler.py) | TF-IDF indexing, semantic search, conflict detection |
-| **Task Tree** | [`tests/test_task_tree.py`](tests/test_task_tree.py) | Parallel subtask execution, dependency resolution |
-| **Schemas** | [`tests/test_schemas.py`](tests/test_schemas.py) | Pydantic model validation |
-| **DSC: Asset Synthesis** | [`tests/test_asset_synthesizer.py`](tests/test_asset_synthesizer.py) | Offline and LLM-based graph generation |
-| **DSC: Smoke Tracer** | [`tests/test_smoke_tracer.py`](tests/test_smoke_tracer.py) | AST extraction, trace execution |
-| **DSC: Deploy** | [`tests/test_deploy.py`](tests/test_deploy.py) | Asset copy, `api_schema.yaml` merge |
+| **Task Tree** | [`tests/test_task_tree.py`](tests/test_task_tree.py) | Parallel subtask execution (requires libcst) |
+| **MCP Server** | [`tests/test_mcp_server.py`](tests/test_mcp_server.py) | MCP tool endpoints (requires libcst) |
 | **Step 1: Baseline** | [`tests/step1_baseline/`](tests/step1_baseline/) | Ollama API communication baseline |
 | **Step 2: Fake API** | [`tests/step2_fake_api/`](tests/step2_fake_api/) | Knowledge reference adherence test |
 | **Step 3: Stress** | [`tests/step3_stress/`](tests/step3_stress/) | Self-healing loop stress test |
-| **Step 4: Synthesizer** | [`tests/step4_ollama_synthesizer/`](tests/step4_ollama_synthesizer/) | Ollama-integrated synthesizer validation |
 
 ---
 
@@ -575,10 +537,12 @@ See [`docs/detailed_guide.md`](docs/detailed_guide.md) for:
 |---|---|---|
 | **Detailed Manual** | [`docs/detailed_guide.md`](docs/detailed_guide.md) | MCP configuration, Aider setup, model metadata, prompt engineering, operational procedures |
 | **Organization Design** | [`docs/organization_design.md`](docs/organization_design.md) | Complete v4.1 multi-agent architecture, phase definitions, Safe Factory implementation mapping |
-| **Safe Factory Architecture** | [`plans/safe_factory_architecture.md`](plans/safe_factory_architecture.md) | In-depth sandbox isolation design, component specifications, security analysis |
-| **Review-Driven Improvements** | [`plans/review_driven_improvements.md`](plans/review_driven_improvements.md) | Five targeted improvements (88→90+ scoring), architect gate, success patterns, cross-module regression |
-| **Skills Reference** | [`skills.md`](skills.md) | Executable skill definitions for DSC pipeline stages and agent integration |
+| **Org-Theory Improvements** | [`plans/organizational_theory_improvements_detailed_design.md`](plans/organizational_theory_improvements_detailed_design.md) | Integrator Agent + Adversarial Reviewer detailed design and TDD specs |
+| **Phase 4 Design** | [`plans/phase4_contract_driven_repair_detailed_design.md`](plans/phase4_contract_driven_repair_detailed_design.md) | Contract-driven repair with function-level isolation |
+| **Safe Factory Architecture** | [`plans/safe_factory_architecture.md`](plans/safe_factory_architecture.md) | In-depth sandbox isolation design, component specifications |
+| **Review-Driven Improvements** | [`plans/review_driven_improvements.md`](plans/review_driven_improvements.md) | Five targeted improvements, architect gate, success patterns |
 | **Architecture Design (Japanese)** | [`architecture_design.md`](architecture_design.md) | Original detailed design document in Japanese |
+| **Role Protocol Architecture** | [`plans/role_protocol_architecture_detailed_design.md`](plans/role_protocol_architecture_detailed_design.md) | Role-based protocol, capability dispatch, organization profiles |
 | **Decision Logs** | [`decisions/`](decisions/) | Architecture Decision Records (ADRs) with assumption tracking and context |
 
 ---

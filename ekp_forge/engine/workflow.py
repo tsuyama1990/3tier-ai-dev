@@ -201,9 +201,7 @@ class WorkflowEngine:
             verification_result = self.run(Role.VERIFICATION, ver_context)
 
             # Extract diagnostics from verification result
-            diagnostics: list[Diagnostic] = verification_result.get(
-                "diagnostics", []
-            )
+            diagnostics: list[Diagnostic] = verification_result.get("diagnostics", [])
 
             # Ask Fix Planner if there's work
             if not planner.has_work(diagnostics):
@@ -350,18 +348,24 @@ class WorkflowEngine:
                 original_source = self._read_file_content(fix_task.target_file)
                 if original_source is None:
                     return self._build_v2_result(
-                        "failed", completed_task_ids,
+                        "failed",
+                        completed_task_ids,
                         error=f"Cannot read {fix_task.target_file}",
                         impl_result=impl_result,
                     )
 
                 sliced_function = slicer.extract_function(
-                    original_source, fix_task.target_symbol,
+                    original_source,
+                    fix_task.target_symbol,
                 )
 
                 # Dispatch to Worker with sliced context
                 worker_result = self._run_v2_worker_fix(
-                    task, fix_task, sliced_function, contract, rag_context,
+                    task,
+                    fix_task,
+                    sliced_function,
+                    contract,
+                    rag_context,
                 )
 
                 if worker_result.get("status") == "failed":
@@ -391,7 +395,8 @@ class WorkflowEngine:
                     )
                     if not inject_ok:
                         return self._build_v2_result(
-                            "failed", completed_task_ids,
+                            "failed",
+                            completed_task_ids,
                             error=f"Failed to inject fix for {fix_task.target_symbol}",
                             impl_result=impl_result,
                         )
@@ -409,24 +414,29 @@ class WorkflowEngine:
                 if escalation_count < max_escalations:
                     escalation_count += 1
                     manager_result = self._escalate_logical_error(
-                        task, last_fix_task, original_source,
-                        fixed_function, recheck.diagnostics, iteration,
+                        task,
+                        last_fix_task,
+                        original_source,
+                        fixed_function,
+                        recheck.diagnostics,
+                        iteration,
                     )
 
                     if manager_result.get("status") == "manager_patch_applied":
                         continue  # Re-verify
-                    elif manager_result.get("status") == "contract_redesign":
+                    if manager_result.get("status") == "contract_redesign":
                         return self._build_v2_result(
-                            "contract_redesign", completed_task_ids,
+                            "contract_redesign",
+                            completed_task_ids,
                             manager_result=manager_result,
                             impl_result=impl_result,
                         )
-                    else:
-                        return self._build_v2_result(
-                            "escalate_human", completed_task_ids,
-                            manager_result=manager_result,
-                            impl_result=impl_result,
-                        )
+                    return self._build_v2_result(
+                        "escalate_human",
+                        completed_task_ids,
+                        manager_result=manager_result,
+                        impl_result=impl_result,
+                    )
 
         return self._build_v2_result("failed", completed_task_ids, impl_result=impl_result)
 
@@ -469,11 +479,13 @@ class WorkflowEngine:
                 instruction_parts.append(ref.content)
             instruction_parts.append("")
 
-        instruction_parts.extend([
-            "Fix the errors below. Do NOT modify anything outside the target symbol.",
-            "",
-            "Errors to fix:",
-        ])
+        instruction_parts.extend(
+            [
+                "Fix the errors below. Do NOT modify anything outside the target symbol.",
+                "",
+                "Errors to fix:",
+            ]
+        )
         for d in fix_task.diagnostics:
             loc = f"{d.file}:{d.line}" if d.line else d.file
             instruction_parts.append(f"  - {loc}: {d.message[:200]}")
@@ -502,9 +514,7 @@ class WorkflowEngine:
         content = temp_path.read_text(encoding="utf-8")
         return content
 
-    def _reject_and_retry(
-        self, fix_task: FixTaskV2, rejection_details: str
-    ) -> None:
+    def _reject_and_retry(self, fix_task: FixTaskV2, rejection_details: str) -> None:
         """Log a patch rejection (in production, re-queue to Worker).
 
         For now, the rejection is written to a log file. Integration
@@ -514,10 +524,7 @@ class WorkflowEngine:
 
         log_path = Path("_patch_rejections.log")
         with open(log_path, "a", encoding="utf-8") as f:
-            f.write(
-                f"[REJECT] {fix_task.task_id}: {fix_task.target_symbol}\n"
-                f"{rejection_details}\n\n"
-            )
+            f.write(f"[REJECT] {fix_task.task_id}: {fix_task.target_symbol}\n{rejection_details}\n\n")
 
     def _escalate_logical_error(
         self,

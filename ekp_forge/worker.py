@@ -449,7 +449,7 @@ class WorkerAgent(BaseAgent):
         }
 
     # -------------------------------------------------------------------
-    # Legacy: execute_verification_loop (DEPRECATED)
+    # Legacy: execute_verification_loop (MIGRATED to execute())
     # -------------------------------------------------------------------
 
     def execute_verification_loop(
@@ -461,217 +461,21 @@ class WorkerAgent(BaseAgent):
         worker_contract: WorkerContract | None = None,
         fix_task: FixTask | None = None,
     ) -> dict[str, Any]:
+        """**MIGRATED**: Delegates to ``_execute_research_mode()``.
+
+        Previously used ``SandboxWorkspace`` + ``clone_into()`` (800ms git clone).
+        Now uses the same ``_run_aider_verification_loop()`` as ``execute()``.
         """
-        **DEPRECATED**: Use ``WorkerAgent.execute()`` with ``execution_mode``
-        context instead.
-
-        This legacy method uses ``SandboxWorkspace`` + ``clone_into()`` which
-        performs a full ``git clone --depth 1`` on every invocation (~300s
-        overhead).
-
-        **Replacement**: Call ``execute()`` with::
-
-            worker.execute({
-                "_role": Role.IMPLEMENTATION,
-                "task": task,
-                "plan": plan,
-                "execution_mode": "production",
-            })
-
-        The new production path uses ``GitWorktree`` (millisecond-fast
-        isolated workspace) instead of ``SandboxWorkspace`` + ``clone_into``.
-
-        This method is preserved for backward compatibility and delegates to
-        the deprecated ``SandboxWorkspace`` implementation.
-        """
-        import warnings
-
-        warnings.warn(
-            "execute_verification_loop() is deprecated. Use execute() with execution_mode context instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        from ekp_forge.sandbox.cloner import clone_into
-        from ekp_forge.sandbox.workspace import SandboxWorkspace
         from ekp_forge.schemas.task_schema import TaskSchema
 
         assert isinstance(task, TaskSchema), "task must be a TaskSchema instance"
-
-        error_chunk = ErrorChunkSummary(task_id=task.task_id)
-
-        with SandboxWorkspace() as ws_path:
-            clone_ok, clone_err = clone_into(ws_path)
-            if not clone_ok:
-                return {
-                    "status": "failed",
-                    "retries": 0,
-                    "error_chunk_summary": error_chunk,
-                    "help_request": None,
-                    "git_diff": "",
-                }
-
-            original_cwd = os.getcwd()
-            os.chdir(ws_path / "repo")
-            try:
-                try:
-                    setup_ruff_mypy()
-                except Exception as e:
-                    print(f"Failed to run setup_ruff_mypy: {e}", file=sys.stderr)
-
-                prev_error_hash: str | None = None
-
-                temp_msg = ".aider.msg.temp"
-                aider_cmd = ["aider", "--yes", "--no-git", "--edit-format", "diff"]
-                if self.model:
-                    aider_cmd.extend(["--model", self.model])
-                if os.path.exists(".ai-knowledge"):
-                    for f in sorted(os.listdir(".ai-knowledge")):
-                        fpath = os.path.join(".ai-knowledge", f)
-                        if os.path.isfile(fpath) and f.endswith(".md"):
-                            aider_cmd.extend(["--read", fpath])
-                aider_cmd.extend(["--message-file", temp_msg])
-                if fix_task is not None:
-                    aider_cmd.extend(fix_task.contract.target_files)
-                else:
-                    aider_cmd.extend(task.affected_modules)
-
-                current_instructions = plan
-                if worker_contract is not None and fix_task is None:
-                    scope_block = (
-                        f"[CONTRACT: {worker_contract.contract_id}]\n"
-                        f"Objective: {worker_contract.objective}\n"
-                        f"Target files: {', '.join(worker_contract.target_files)}\n"
-                        f"Editable symbols: {', '.join(worker_contract.editable_symbols) or '(any)'}\n"
-                        f"Forbidden symbols: {', '.join(worker_contract.forbidden_symbols) or '(none)'}\n"
-                        f"Design freedom: {worker_contract.local_design_freedom}\n\n"
-                        f"You are STRICTLY FORBIDDEN from modifying files outside the target_files list. "
-                        f"You MUST NOT change or remove any function/class/method listed in forbidden_symbols.\n\n"
-                    )
-                    current_instructions = scope_block + current_instructions
-
-                try:
-                    for attempt in range(1, self.max_retries + 1):
-                        self._write_temp_message(current_instructions)
-
-                        aider_ok, aider_msg = self._run_aider(aider_cmd, attempt)
-                        if not aider_ok:
-                            error_chunk.add_entry(
-                                ErrorChunkEntry(
-                                    attempt=attempt,
-                                    error_type="AiderExecutionError",
-                                    module=task.affected_modules[0] if task.affected_modules else "*",
-                                    action_taken=aider_msg,
-                                )
-                            )
-                            break
-
-                        import_ok, import_err = self._validate_imports()
-                        if not import_ok:
-                            error_chunk.add_entry(
-                                ErrorChunkEntry(
-                                    attempt=attempt, error_type="ImportViolation", module="*", action_taken=import_err
-                                )
-                            )
-                            continue
-
-                        from ekp_forge.sandbox.scoped_lint import _changed_files
-
-                        changed_files = [str(f) for f in _changed_files()] if _changed_files() else None
-
-                        diagnostics = run_verification_pipeline(
-                            changed_files=changed_files,
-                            run_pytest=True,
-                            workspace=ws_path / "repo",
-                        )
-
-                        for d in diagnostics:
-                            error_chunk.add_entry(
-                                ErrorChunkEntry(
-                                    attempt=attempt,
-                                    error_type=f"{d.tool.upper()}{d.code}",
-                                    module=d.file,
-                                    action_taken=f"{d.category.value}: {d.message[:200]}",
-                                )
-                            )
-
-                        remaining = [
-                            d
-                            for d in diagnostics
-                            if d.category not in {DiagnosticCategory.FORMATTING, DiagnosticCategory.UNUSED_IMPORT}
-                        ]
-                        if not remaining:
-                            git_diff = self._get_git_diff()
-                            self._update_reflection_log(task, error_chunk, success=True)
-                            return {
-                                "status": "success",
-                                "retries": attempt,
-                                "error_chunk_summary": error_chunk,
-                                "help_request": None,
-                                "git_diff": git_diff,
-                                "diagnostics": [d.model_dump() for d in diagnostics],
-                            }
-
-                        error_lines = [f"  [{d.tool}] {d.file}:{d.line}: {d.message[:150]}" for d in diagnostics[:15]]
-                        if len(diagnostics) > 15:
-                            error_lines.append(f"  ... and {len(diagnostics) - 15} more issues")
-                        combined_error_log = "\n".join(error_lines)[:1500]
-
-                        introspection_context: str | None = None
-                        if (
-                            "AttributeError" in combined_error_log
-                            or "ModuleNotFoundError" in combined_error_log
-                            or "has no attribute" in combined_error_log.lower()
-                        ):
-                            introspection_context = self._try_introspection(combined_error_log)
-
-                        if not introspection_context:
-                            esc_result = self._check_escalation_policy(
-                                attempt, error_chunk, combined_error_log, prev_error_hash, task
-                            )
-                            if esc_result is not None:
-                                git_diff = self._get_git_diff()
-                                self._git_rollback()
-                                return {
-                                    "status": "escalated",
-                                    "retries": attempt,
-                                    "error_chunk_summary": error_chunk,
-                                    "help_request": esc_result,
-                                    "git_diff": git_diff,
-                                    "diagnostics": [d.model_dump() for d in diagnostics],
-                                }
-
-                        contract_block = ""
-                        if worker_contract is not None:
-                            contract_block = (
-                                f"[CONTRACT: {worker_contract.contract_id}]\n"
-                                f"Target files: {', '.join(worker_contract.target_files)}\n"
-                                f"You are STRICTLY FORBIDDEN from modifying anything outside the scope above.\n\n"
-                            )
-                        introspection_block = (
-                            f"\n[Introspection Result]\n{introspection_context}\n\n" if introspection_context else ""
-                        )
-                        current_instructions = (
-                            f"{contract_block}{introspection_block}"
-                            f"The verification pipeline found remaining issues. Fix only the errors listed below.\n\n"
-                            f"--- Remaining Issues ({len(remaining)} unresolved) ---\n{combined_error_log}"
-                        )
-                        prev_error_hash = _error_fingerprint(combined_error_log)
-                finally:
-                    self._cleanup_temp_message()
-
-                self._git_rollback()
-                self._update_reflection_log(task, error_chunk, success=False)
-                return {
-                    "status": "failed",
-                    "retries": self.max_retries,
-                    "error_chunk_summary": error_chunk,
-                    "help_request": None,
-                    "git_diff": "",
-                    "diagnostics": None,
-                }
-            finally:
-                os.chdir(original_cwd)
+        return self._execute_research_mode(
+            task,
+            plan,
+            _rag_context,
+            worker_contract=worker_contract,
+            fix_task=fix_task,
+        )
 
     # -------------------------------------------------------------------
     # Phase 4.5: Research Mode — Direct Local Execution (no sandbox, no git ops)

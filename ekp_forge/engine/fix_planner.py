@@ -196,9 +196,7 @@ class FixPlanner:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _is_co_located_with_any(
-        candidate: Diagnostic, targets: list[Diagnostic]
-    ) -> bool:
+    def _is_co_located_with_any(candidate: Diagnostic, targets: list[Diagnostic]) -> bool:
         """Check if *candidate* is co-located with any diagnostic in *targets*.
 
         Two diagnostics are co-located if they share the same file and their
@@ -226,9 +224,7 @@ class FixPlanner:
     # Internal — Instruction building with FixHistory
     # ------------------------------------------------------------------
 
-    def _build_instruction(
-        self, priority: int, diagnostics: list[Diagnostic]
-    ) -> str:
+    def _build_instruction(self, priority: int, diagnostics: list[Diagnostic]) -> str:
         """Build a concise, bounded instruction for the Worker.
 
         The instruction includes:
@@ -245,9 +241,7 @@ class FixPlanner:
         Returns:
             A concise instruction string (≤ 1500 chars).
         """
-        priority_label = {1: "Syntax / Security", 2: "Import / Names", 3: "Type", 4: "Tests"}.get(
-            priority, "Fixes"
-        )
+        priority_label = {1: "Syntax / Security", 2: "Import / Names", 3: "Type", 4: "Tests"}.get(priority, "Fixes")
 
         # Collect unique files
         files = sorted(set(d.file for d in diagnostics if d.file))
@@ -260,9 +254,7 @@ class FixPlanner:
             error_lines.append(f"  - {loc}: {d.message[:120]}")
 
         if len(diagnostics) > _MAX_ERRORS_IN_INSTRUCTION:
-            error_lines.append(
-                f"  ... and {len(diagnostics) - _MAX_ERRORS_IN_INSTRUCTION} more issues"
-            )
+            error_lines.append(f"  ... and {len(diagnostics) - _MAX_ERRORS_IN_INSTRUCTION} more issues")
 
         # -- FixHistory: prepend context from previous iterations ----------
         history_block: list[str] = []
@@ -272,10 +264,7 @@ class FixPlanner:
                 files_str = ", ".join(entry.files[:3])
                 if len(entry.files) > 3:
                     files_str += f" ... (+{len(entry.files) - 3})"
-                history_block.append(
-                    f"  Iteration {entry.task_id} (P{entry.priority}): "
-                    f"{entry.summary[:100]}"
-                )
+                history_block.append(f"  Iteration {entry.task_id} (P{entry.priority}): {entry.summary[:100]}")
             history_block.append("")
 
         parts = [
@@ -305,9 +294,7 @@ class FixPlanner:
 
         return instruction
 
-    def _record_history(
-        self, task: FixTask, diagnostics: list[Diagnostic]
-    ) -> None:
+    def _record_history(self, task: FixTask, diagnostics: list[Diagnostic]) -> None:
         """Record a completed fix iteration in FixHistory."""
         files = sorted(set(d.file for d in diagnostics if d.file))
         codes = sorted(set(d.code for d in diagnostics if d.code))
@@ -451,9 +438,7 @@ class SymbolResolver:
     """
 
     @staticmethod
-    def resolve_symbol(
-        file_path: str, line_number: int
-    ) -> tuple[str, Literal["function", "class_method"]]:
+    def resolve_symbol(file_path: str, line_number: int) -> tuple[str, Literal["function", "class_method"]]:
         """Given a file path and line number, find the enclosing symbol name.
 
         Walks the AST to find which function (or class method) contains
@@ -492,9 +477,7 @@ class SymbolResolver:
                 if node.lineno <= line_number <= end_line:
                     return (node.name, "function")
 
-        raise ValueError(
-            f"No enclosing symbol found at {file_path}:{line_number}"
-        )
+        raise ValueError(f"No enclosing symbol found at {file_path}:{line_number}")
 
     @staticmethod
     def resolve_symbols_from_diagnostics(

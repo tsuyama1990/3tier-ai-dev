@@ -60,19 +60,21 @@ def test_specification_generation() -> None:
     context = _make_specification_context()
 
     # Mock DeepSeek call to return a structured contract JSON
-    mock_contract_json = json.dumps({
-        "contract_id": "C-20260628000000-a1b2c3",
-        "objective": "Create Calculator class with add method.",
-        "target_files": ["test_output/calculator.py"],
-        "editable_symbols": ["Calculator.add"],
-        "forbidden_symbols": [],
-        "acceptance_tests": ["Calculator().add(1, 2) == 3"],
-        "implementation_steps": [
-            "Create test_output/calculator.py with Calculator class",
-            "Implement add method returning sum of two integers",
-        ],
-        "local_design_freedom": "within_file",
-    })
+    mock_contract_json = json.dumps(
+        {
+            "contract_id": "C-20260628000000-a1b2c3",
+            "objective": "Create Calculator class with add method.",
+            "target_files": ["test_output/calculator.py"],
+            "editable_symbols": ["Calculator.add"],
+            "forbidden_symbols": [],
+            "acceptance_tests": ["Calculator().add(1, 2) == 3"],
+            "implementation_steps": [
+                "Create test_output/calculator.py with Calculator class",
+                "Implement add method returning sum of two integers",
+            ],
+            "local_design_freedom": "within_file",
+        }
+    )
 
     with patch.object(manager, "_call_deepseek", return_value=mock_contract_json):
         result = manager.execute(context)
@@ -98,21 +100,19 @@ def test_specification_generation_creates_skeleton() -> None:
     task = context["task"]
     task.affected_modules = [str(target_file)]
 
-    mock_contract_json = json.dumps({
-        "contract_id": "C-20260628000000-b2c3d4",
-        "objective": "Create Calculator class with add method.",
-        "target_files": [str(target_file)],
-        "editable_symbols": ["Calculator.add"],
-        "forbidden_symbols": [],
-        "acceptance_tests": ["Calculator().add(1, 2) == 3"],
-        "implementation_steps": [],
-        "local_design_freedom": "within_file",
-        "skeleton_code": (
-            "class Calculator:\n"
-            "    def add(self, a: int, b: int) -> int:\n"
-            "        pass\n"
-        ),
-    })
+    mock_contract_json = json.dumps(
+        {
+            "contract_id": "C-20260628000000-b2c3d4",
+            "objective": "Create Calculator class with add method.",
+            "target_files": [str(target_file)],
+            "editable_symbols": ["Calculator.add"],
+            "forbidden_symbols": [],
+            "acceptance_tests": ["Calculator().add(1, 2) == 3"],
+            "implementation_steps": [],
+            "local_design_freedom": "within_file",
+            "skeleton_code": ("class Calculator:\n    def add(self, a: int, b: int) -> int:\n        pass\n"),
+        }
+    )
 
     with patch.object(manager, "_call_deepseek", return_value=mock_contract_json):
         result = manager.execute(context)
@@ -154,15 +154,8 @@ def test_worker_slicing_extraction() -> None:
 
 def test_worker_slicing_injection() -> None:
     """FunctionSlicer injects implemented function body back into skeleton."""
-    skeleton = (
-        "class Calculator:\n"
-        "    def add(self, a: int, b: int) -> int:\n"
-        "        pass\n"
-    )
-    implemented = (
-        "    def add(self, a: int, b: int) -> int:\n"
-        "        return a + b\n"
-    )
+    skeleton = "class Calculator:\n    def add(self, a: int, b: int) -> int:\n        pass\n"
+    implemented = "    def add(self, a: int, b: int) -> int:\n        return a + b\n"
     slicer = FunctionSlicer()
     merged = slicer.inject_fix(skeleton, "Calculator.add", implemented)
     assert merged is not None
@@ -206,6 +199,7 @@ def test_worker_slicing_roundtrip(tmp_path: Path) -> None:
 
     # Verify syntax is valid
     import ast
+
     ast.parse(result)
 
 
@@ -230,17 +224,15 @@ def test_contract_verification_compliant() -> None:
     """Manager approves code that matches the contract."""
     manager = ManagerAgent(manager_id="MGR-Test-01")
     contract = _make_calculator_contract()
-    compliant_code = (
-        "class Calculator:\n"
-        "    def add(self, a: int, b: int) -> int:\n"
-        "        return a + b\n"
-    )
+    compliant_code = "class Calculator:\n    def add(self, a: int, b: int) -> int:\n        return a + b\n"
 
-    mock_response = json.dumps({
-        "compliant": True,
-        "reasoning": "All contract requirements are met.",
-        "issues": [],
-    })
+    mock_response = json.dumps(
+        {
+            "compliant": True,
+            "reasoning": "All contract requirements are met.",
+            "issues": [],
+        }
+    )
 
     with patch.object(manager, "_call_deepseek", return_value=mock_response):
         ok, feedback = manager.validate_contract_compliance(contract, compliant_code)
@@ -253,21 +245,19 @@ def test_contract_verification_non_compliant() -> None:
     """Manager rejects code that violates the contract."""
     manager = ManagerAgent(manager_id="MGR-Test-01")
     contract = _make_calculator_contract()
-    non_compliant_code = (
-        "class Calculator:\n"
-        "    def add(self, a: str, b: str) -> str:\n"
-        "        return a + b\n"
-    )
+    non_compliant_code = "class Calculator:\n    def add(self, a: str, b: str) -> str:\n        return a + b\n"
 
-    mock_response = json.dumps({
-        "compliant": False,
-        "reasoning": "Signature mismatch: expected (int, int) -> int, got (str, str) -> str",
-        "issues": [
-            "Method add() parameter 'a' should be int, got str",
-            "Method add() parameter 'b' should be int, got str",
-            "Return type should be int, got str",
-        ],
-    })
+    mock_response = json.dumps(
+        {
+            "compliant": False,
+            "reasoning": "Signature mismatch: expected (int, int) -> int, got (str, str) -> str",
+            "issues": [
+                "Method add() parameter 'a' should be int, got str",
+                "Method add() parameter 'b' should be int, got str",
+                "Return type should be int, got str",
+            ],
+        }
+    )
 
     with patch.object(manager, "_call_deepseek", return_value=mock_response):
         ok, feedback = manager.validate_contract_compliance(contract, non_compliant_code)
@@ -280,16 +270,15 @@ def test_contract_verification_missing_method() -> None:
     """Manager rejects code missing required methods."""
     manager = ManagerAgent(manager_id="MGR-Test-01")
     contract = _make_calculator_contract()
-    missing_code = (
-        "class Calculator:\n"
-        "    pass\n"
-    )
+    missing_code = "class Calculator:\n    pass\n"
 
-    mock_response = json.dumps({
-        "compliant": False,
-        "reasoning": "Required method 'add' is missing from class Calculator.",
-        "issues": ["Missing method: Calculator.add"],
-    })
+    mock_response = json.dumps(
+        {
+            "compliant": False,
+            "reasoning": "Required method 'add' is missing from class Calculator.",
+            "issues": ["Missing method: Calculator.add"],
+        }
+    )
 
     with patch.object(manager, "_call_deepseek", return_value=mock_response):
         ok, feedback = manager.validate_contract_compliance(contract, missing_code)

@@ -185,8 +185,7 @@ class GitWorktree:
         )
         if result.returncode != 0:
             raise GitWorktreeError(
-                f"Not a git repository: {self.repo_root}. "
-                f"GitWorktree requires an existing git repository."
+                f"Not a git repository: {self.repo_root}. GitWorktree requires an existing git repository."
             )
 
     @property

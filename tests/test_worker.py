@@ -30,6 +30,7 @@ def _make_diag(category: DiagnosticCategory = DiagnosticCategory.TEST_FAILURE, m
         category=category,
     )
 
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ def worker() -> WorkerAgent:
 def mock_ruff_mypy() -> Generator[None, None, None]:
     with (
         patch("ekp_forge.worker.setup_ruff_mypy"),
-        patch("ekp_forge.worker.run_verification_pipeline", return_value=[]),
+        patch("ekp_forge.sandbox.verification_ir.run_verification_pipeline", return_value=[]),
         patch("ekp_forge.sandbox.scoped_lint._changed_files", return_value=[]),
     ):
         yield
@@ -92,7 +93,7 @@ class TestVerificationLoopSuccess:
         """2回目の試行で成功した場合も status='success' が返ること"""
         call_count = [0]
 
-        def _verification_side_effect(**kwargs: object) -> list[Diagnostic]:
+        def _verification_side_effect(*args: object, **kwargs: object) -> list[Diagnostic]:
             call_count[0] += 1
             if call_count[0] == 1:
                 return [_make_diag(msg="FAILED tests/test_auth.py::test_auth - AssertionError")]
@@ -101,7 +102,7 @@ class TestVerificationLoopSuccess:
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch("ekp_forge.worker.run_verification_pipeline", side_effect=_verification_side_effect),
+            patch("ekp_forge.sandbox.verification_ir.run_verification_pipeline", side_effect=_verification_side_effect),
             patch.object(worker, "_get_git_diff", return_value="diff --git a/file.py b/file.py"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -135,7 +136,7 @@ class TestVerificationLoopFailure:
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch("ekp_forge.worker.run_verification_pipeline", side_effect=_verification_side_effect),
+            patch("ekp_forge.sandbox.verification_ir.run_verification_pipeline", side_effect=_verification_side_effect),
             patch.object(worker, "_git_rollback") as mock_rollback,
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -171,7 +172,7 @@ class TestEscalationCyclicError:
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch("ekp_forge.worker.run_verification_pipeline", side_effect=_verification_side_effect),
+            patch("ekp_forge.sandbox.verification_ir.run_verification_pipeline", side_effect=_verification_side_effect),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -189,7 +190,7 @@ class TestEscalationContextMissing:
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch("ekp_forge.worker.run_verification_pipeline", return_value=[diag]),
+            patch("ekp_forge.sandbox.verification_ir.run_verification_pipeline", return_value=[diag]),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -204,7 +205,7 @@ class TestEscalationContextMissing:
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch("ekp_forge.worker.run_verification_pipeline", return_value=[diag]),
+            patch("ekp_forge.sandbox.verification_ir.run_verification_pipeline", return_value=[diag]),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -234,7 +235,7 @@ class TestEscalationConfidenceDrop:
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch("ekp_forge.worker.run_verification_pipeline", side_effect=_verification_side_effect),
+            patch("ekp_forge.sandbox.verification_ir.run_verification_pipeline", side_effect=_verification_side_effect),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -257,7 +258,7 @@ class TestErrorChunkAccumulation:
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch("ekp_forge.worker.run_verification_pipeline", return_value=[diag]),
+            patch("ekp_forge.sandbox.verification_ir.run_verification_pipeline", return_value=[diag]),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -391,11 +392,13 @@ class TestExecutionModeDispatch:
         with patch.object(agent, "_run_with_worktree") as mock_prod:
             mock_prod.return_value = {"status": "success", "retries": 0}
             # No execution_mode → defaults to "production"
-            result = agent.execute({
-                "_role": Role.IMPLEMENTATION,
-                "task": _make_task(),
-                "plan": "test plan",
-            })
+            result = agent.execute(
+                {
+                    "_role": Role.IMPLEMENTATION,
+                    "task": _make_task(),
+                    "plan": "test plan",
+                }
+            )
             assert result["status"] == "success"
             mock_prod.assert_called_once()
 
@@ -404,12 +407,14 @@ class TestExecutionModeDispatch:
         agent = WorkerAgent()
         with patch.object(agent, "_execute_research_mode") as mock_research:
             mock_research.return_value = {"status": "success", "retries": 0}
-            result = agent.execute({
-                "_role": Role.IMPLEMENTATION,
-                "task": _make_task(),
-                "plan": "test plan",
-                "execution_mode": "research",
-            })
+            result = agent.execute(
+                {
+                    "_role": Role.IMPLEMENTATION,
+                    "task": _make_task(),
+                    "plan": "test plan",
+                    "execution_mode": "research",
+                }
+            )
             assert result["status"] == "success"
             mock_research.assert_called_once()
 
@@ -418,12 +423,14 @@ class TestExecutionModeDispatch:
         agent = WorkerAgent()
         with patch.object(agent, "_run_with_worktree") as mock_prod:
             mock_prod.return_value = {"status": "success", "retries": 0}
-            result = agent.execute({
-                "_role": Role.IMPLEMENTATION,
-                "task": _make_task(),
-                "plan": "test plan",
-                "execution_mode": "production",
-            })
+            result = agent.execute(
+                {
+                    "_role": Role.IMPLEMENTATION,
+                    "task": _make_task(),
+                    "plan": "test plan",
+                    "execution_mode": "production",
+                }
+            )
             assert result["status"] == "success"
             mock_prod.assert_called_once()
 
