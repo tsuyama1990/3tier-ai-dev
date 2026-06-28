@@ -51,9 +51,11 @@ def _changed_files() -> list[Path]:
         pass
 
     # 3. Untracked Python files (new files created by Aider)
+    # Note: Do NOT use --exclude-standard as it respects .gitignore which may
+    # exclude the test_output/ directory where generated files live.
     try:
         result = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
+            ["git", "ls-files", "--others"],
             capture_output=True,
             text=True,
             check=False,
