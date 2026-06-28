@@ -86,13 +86,14 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
         ]
         self.tree.decompose(self.epic_task, subtasks)
 
-        # Mocks
+        # Mocks — use execute() (new interface) not execute_verification_loop (deprecated)
         worker = MagicMock()
-        worker.execute_verification_loop.return_value = {
+        worker.execute.return_value = {
             "status": "success",
             "git_diff": "some diff",
             "error_chunk_summary": MagicMock(total_retries=1),
             "retries": 1,
+            "diagnostics": [],
         }
 
         manager = MagicMock()
@@ -135,12 +136,14 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
         worker = MagicMock()
 
         # Mocking task execution success for S1, failure for S2
-        def worker_side_effect(task, _plan, _run_adversarial=False):
-            if task.task_id == sub_id1:
+        # Note: execute() is called with {"_role": ..., "task": ..., "plan": ...}
+        def worker_side_effect(context):
+            task = context.get("task")
+            if task is not None and task.task_id == sub_id1:
                 return {"status": "success", "git_diff": "diff", "error_chunk_summary": MagicMock(total_retries=0)}
             return {"status": "failed", "error_chunk_summary": MagicMock(total_retries=3)}
 
-        worker.execute_verification_loop.side_effect = worker_side_effect
+        worker.execute.side_effect = worker_side_effect
 
         manager = MagicMock()
         manager.triage.return_value = ("ACCEPT", "plan")
@@ -204,17 +207,26 @@ class TestTaskTreeAndDecomposition(unittest.TestCase):
             "affected_modules": ["src/a.py", "src/b.py", "src/c.py"],
             "assumptions_required": {},
         }
-        # Mock execute_verification_loop to run cleanly using patch context managers
+        # Mock both the legacy execute_verification_loop AND the new execute() method
+        # to prevent Aider/Ollama from being invoked during tests.
         from unittest.mock import patch
 
         import ekp_forge.manager as manager
         import ekp_forge.worker as worker
 
         with (
+            patch.object(worker.WorkerAgent, "execute") as mock_execute,
             patch.object(worker.WorkerAgent, "execute_verification_loop") as mock_evl,
             patch.object(manager.ManagerAgent, "triage") as mock_triage,
             patch.object(manager.ManagerAgent, "validate_outcome") as mock_validate,
         ):
+            mock_execute.return_value = {
+                "status": "success",
+                "retries": 1,
+                "git_diff": "diff",
+                "error_chunk_summary": MagicMock(total_retries=0),
+                "diagnostics": [],
+            }
             mock_evl.return_value = {
                 "status": "success",
                 "git_diff": "diff",

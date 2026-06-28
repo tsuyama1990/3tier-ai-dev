@@ -825,6 +825,9 @@ class WorkerAgent(BaseAgent):
                 continue
             if "tests" in py_file.parts and "generated" not in py_file.parts:
                 continue
+            # Skip utility scripts at repo root (not part of generated test code)
+            if py_file.name in {"run_aider_mcp.py", "hello_fbs.py"}:
+                continue
 
             content = py_file.read_text()
             for raw_line in content.splitlines():

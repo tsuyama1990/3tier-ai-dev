@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+# Module-level ADR index cache: {cache_key: (digest, index, idf)}
+# Cache is invalidated when any ADR file's mtime changes.
+_index_cache: dict[str, tuple[str, list[dict[str, Any]], dict[str, float]]] = {}
 
 
 class AssumptionRAGCrawler:
@@ -27,11 +32,26 @@ class AssumptionRAGCrawler:
     # Public API
     # -------------------------------------------------------------------
 
-    def build_index(self) -> None:
+    def build_index(self, force: bool = False) -> None:
         """
         Crawl all *.md files in decisions_dir, extract Assumptions JSON blocks,
         Decision sections, and Context sections, then build the TF-IDF index.
+
+        Uses module-level ``_index_cache`` keyed by ``(resolved_path, digest)``
+        to avoid redundant file I/O. The cache is invalidated when any ADR
+        file's modification time changes. Pass ``force=True`` to bypass cache.
         """
+        cache_key = str(self._decisions_dir.resolve())
+
+        # Compute digest of all ADR files (mtime + size) for change detection
+        if not force and cache_key in _index_cache:
+            cached_digest, cached_index, cached_idf = _index_cache[cache_key]
+            current_digest = self._compute_digest()
+            if current_digest is not None and cached_digest == current_digest:
+                self._index = cached_index
+                self._idf = cached_idf
+                return
+
         self._index = []
 
         if not self._decisions_dir.exists():
@@ -74,6 +94,34 @@ class AssumptionRAGCrawler:
             doc_count = sum(1 for doc in self._index if token in doc["tokens"])
             # Smooth IDF (scikit-learn style) to ensure IDF is never zero
             self._idf[token] = math.log((1 + total_docs) / (1 + doc_count)) + 1.0
+
+        # Update module-level cache
+        current_digest = self._compute_digest()
+        if current_digest is not None:
+            _index_cache[cache_key] = (current_digest, self._index, self._idf)
+
+    def _compute_digest(self) -> str | None:
+        """Compute a deterministic digest of all ADR files (mtime + size).
+
+        Returns ``None`` if the decisions directory does not exist or
+        contains no ``.md`` files.
+        """
+        if not self._decisions_dir.exists():
+            return None
+        md_files = sorted(self._decisions_dir.glob("*.md"))
+        if not md_files:
+            return None
+        digest = hashlib.sha256()
+        for f in md_files:
+            try:
+                stat = f.stat()
+                # Include mtime (nanosecond) and file size in digest
+                digest.update(f.name.encode())
+                digest.update(str(stat.st_mtime_ns).encode())
+                digest.update(str(stat.st_size).encode())
+            except OSError:
+                continue
+        return digest.hexdigest()
 
     def search(
         self,

@@ -653,6 +653,17 @@ Decision: APPROVE
         import urllib.error
         import urllib.request
 
+        # Quick connectivity check to avoid 30s timeout when Ollama is not running
+        try:
+            req_check = urllib.request.Request(
+                "http://localhost:11434/api/tags",
+                method="HEAD",
+            )
+            with urllib.request.urlopen(req_check, timeout=3) as _resp:
+                pass
+        except Exception:
+            return None
+
         data = json.dumps(
             {
                 "model": "qwen2.5-coder:7b",

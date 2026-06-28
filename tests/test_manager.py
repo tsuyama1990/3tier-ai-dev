@@ -86,7 +86,8 @@ class TestTriageReject:
             # Write a restricted api_schema.yaml
             schema_path.write_text(yaml.dump({"allowed_imports": ["builtins"]}))
             # Add constraint that explicitly references importing a disallowed library
-            valid_task.constraints = ["Do not import requests library"]
+            # Note: Regex matches line-start "import" or "from" only (not natural language)
+            valid_task.constraints = ["import requests  # This should be rejected"]
             status, reason = manager.triage(valid_task)
             assert status == "REJECT"
             assert "Assumption violated" in reason

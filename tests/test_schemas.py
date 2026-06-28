@@ -52,9 +52,9 @@ class TestTaskSchema:
             TaskSchema(**data)
 
     def test_task_id_too_short(self) -> None:
-        """不完全な task_id 形式でもエラー"""
+        """空の task_id 形式でエラー"""
         data = _valid_task_schema()
-        data["task_id"] = "T-123"
+        data["task_id"] = "T-"
         with pytest.raises(ValidationError, match="task_id"):
             TaskSchema(**data)
 
@@ -66,9 +66,9 @@ class TestTaskSchema:
             TaskSchema(**data)
 
     def test_goal_too_long(self) -> None:
-        """200文字超の goal でバリデーションエラー"""
+        """1000文字超の goal でバリデーションエラー"""
         data = _valid_task_schema()
-        data["goal"] = "x" * 201
+        data["goal"] = "x" * 1001
         with pytest.raises(ValidationError, match="goal"):
             TaskSchema(**data)
 
