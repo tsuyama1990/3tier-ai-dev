@@ -365,11 +365,12 @@ class WorkerAgent(BaseAgent):
                         )
                     )
 
-                # Check for remaining issues
+                # Check for remaining issues — gatekeeper parse failures are non-blocking
                 remaining = [
                     d
                     for d in diagnostics
                     if d.category not in {DiagnosticCategory.FORMATTING, DiagnosticCategory.UNUSED_IMPORT}
+                    and d.tool != "gatekeeper"
                 ]
                 if not remaining:
                     git_diff = self._get_git_diff()

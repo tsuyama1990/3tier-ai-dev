@@ -35,6 +35,7 @@ Usage::
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
 import libcst as cst
@@ -93,9 +94,14 @@ class _FunctionReplacer(cst.CSTTransformer):
         self._parse_replacement()
 
     def _parse_replacement(self) -> None:
-        """Parse the new function source into a CST node."""
+        """Parse the new function source into a CST node.
+
+        Uses ``textwrap.dedent`` to handle indented function sources
+        (e.g., methods extracted from a class).
+        """
         try:
-            new_module = cst.parse_module(self.new_source)
+            dedented = textwrap.dedent(self.new_source)
+            new_module = cst.parse_module(dedented)
             for statement in new_module.body:
                 if isinstance(statement, CSTFunctionDef):
                     self._replacement_node = statement

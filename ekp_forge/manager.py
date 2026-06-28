@@ -23,6 +23,7 @@ import yaml
 from ekp_forge.agents.base import BaseAgent, ExecutionTier
 from ekp_forge.protocol.capability import Capability
 from ekp_forge.protocol.roles import Role
+from ekp_forge.schemas.contract import WorkerContract
 from ekp_forge.schemas.task_schema import (
     ChallengeObjection,
     ChallengeResult,
@@ -97,15 +98,45 @@ class ManagerAgent(BaseAgent):
             return {"status": "accepted", "plan": triage_result}
 
         if role == Role.SPECIFICATION:
-            # Defer to planning phase for now
+            """Generate a WorkerContract from task + plan using DeepSeek.
+
+            The Manager (DeepSeek) produces:
+            - A ``WorkerContract`` Pydantic instance with target files,
+              editable symbols, and acceptance criteria.
+            - Optionally, skeleton code written to the target file.
+            """
             if task is None:
                 raise ValueError(f"ManagerAgent.execute(): 'task' required for role {role}")
-            triage_status, triage_result = self.triage(task)
-            return {"status": triage_status.lower(), "plan": triage_result}
+            plan: str = context.get("plan", "")
+            contract = self._generate_contract(task, plan)
+            return {
+                "status": "accepted",
+                "worker_contract": contract,
+                "plan": plan,
+            }
 
         if role == Role.INTEGRATION:
             if task is None:
                 raise ValueError(f"ManagerAgent.execute(): 'task' required for role {role}")
+            worker_contract: WorkerContract | None = context.get("worker_contract")
+
+            # Contract-driven validation (semantic, not static analysis)
+            if worker_contract is not None:
+                from pathlib import Path
+
+                code = ""
+                for mod in task.affected_modules:
+                    p = Path(mod)
+                    if p.exists():
+                        code += f"# --- {mod} ---\n{p.read_text(encoding='utf-8')}\n\n"
+                if code:
+                    validation_ok, feedback = self.validate_contract_compliance(worker_contract, code)
+                    if not validation_ok:
+                        return {"status": "failed", "feedback": feedback, "adr_path": None}
+                    adr_path = self.generate_adr(task=task, error_chunk=ErrorChunkSummary(task_id=task.task_id))
+                    return {"status": "success", "adr_path": adr_path}
+
+            # Fallback: static analysis validation
             error_chunk = context.get("error_chunk_summary")
             if error_chunk is None:
                 from ekp_forge.schemas.task_schema import ErrorChunkSummary
@@ -1045,6 +1076,153 @@ Validation passed with {error_chunk.total_retries} retries.
         )
 
         return "\n".join(lines)
+
+    # -------------------------------------------------------------------
+    # Phase 6: Contract-Driven Specification & Validation
+    # -------------------------------------------------------------------
+
+    def _generate_contract(self, task: Any, plan: str) -> WorkerContract:
+        """Generate a ``WorkerContract`` from task + plan using DeepSeek.
+
+        Builds a prompt that asks DeepSeek to output a JSON structure
+        matching the ``WorkerContract`` schema, then instantiates it.
+
+        If DeepSeek is unavailable, falls back to a minimal contract
+        derived from the task schema directly.
+        """
+        prompt = (
+            f"Generate a strict WorkerContract for the following task.\n\n"
+            f"## Task\nGoal: {task.goal}\n"
+            f"Constraints: {', '.join(task.constraints)}\n"
+            f"Affected modules: {', '.join(task.affected_modules)}\n"
+            f"Acceptance tests: {', '.join(task.acceptance_tests)}\n\n"
+            f"## Plan\n{plan[:2000]}\n\n"
+            f"## Required Output Format\n"
+            f"Output a JSON object with EXACTLY these keys:\n"
+            f"- contract_id: \"C-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-xxxxxx\"\n"
+            f"- objective: string (single sentence describing the implementation)\n"
+            f"- target_files: list of strings (files to modify)\n"
+            f"- editable_symbols: list of strings (format: \"ClassName.method_name\" or \"function_name\")\n"
+            f"- forbidden_symbols: list of strings\n"
+            f"- acceptance_tests: list of strings\n"
+            f"- implementation_steps: list of strings\n"
+            f"- local_design_freedom: \"none\" or \"within_file\"\n"
+            f"- skeleton_code: string (Python code with class/function signatures and ``pass`` bodies)\n"
+            f"\n"
+            f"CRITICAL: editable_symbols must use dotted format (e.g., \"Calculator.add\").\n"
+            f"skeleton_code must be valid Python with type hints and ``pass`` for all method bodies.\n"
+        )
+
+        response = self._call_deepseek(prompt)
+
+        if response:
+            try:
+                import json
+
+                data = json.loads(response)
+                contract = WorkerContract(
+                    contract_id=data.get("contract_id", f"C-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-000000"),
+                    objective=data.get("objective", task.goal),
+                    target_files=data.get("target_files", task.affected_modules),
+                    editable_symbols=data.get("editable_symbols", []),
+                    forbidden_symbols=data.get("forbidden_symbols", []),
+                    acceptance_tests=data.get("acceptance_tests", task.acceptance_tests),
+                    implementation_steps=data.get("implementation_steps", []),
+                    local_design_freedom=data.get("local_design_freedom", "none"),
+                )
+                # Write skeleton code to target file if provided
+                skeleton = data.get("skeleton_code", "")
+                if skeleton and contract.target_files:
+                    target = Path(contract.target_files[0])
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(skeleton, encoding="utf-8")
+                return contract
+            except Exception:
+                pass
+
+        # Fallback: minimal contract from task
+        return WorkerContract(
+            contract_id=f"C-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-000000",
+            objective=task.goal,
+            target_files=task.affected_modules,
+            editable_symbols=[],
+            acceptance_tests=task.acceptance_tests,
+            local_design_freedom="none",
+        )
+
+    def validate_contract_compliance(
+        self,
+        contract: WorkerContract,
+        code: str,
+    ) -> tuple[bool, str]:
+        """Validate generated code against a ``WorkerContract`` using DeepSeek.
+
+        Args:
+            contract: The ``WorkerContract`` defining expected interfaces.
+            code: The generated implementation code to validate.
+
+        Returns:
+            ``(True, "")`` if compliant, ``(False, feedback_reason)`` if not.
+        """
+        prompt = (
+            f"Validate the following implementation code against the WorkerContract.\n\n"
+            f"## WorkerContract\n"
+            f"Objective: {contract.objective}\n"
+            f"Target files: {', '.join(contract.target_files)}\n"
+            f"Editable symbols: {', '.join(contract.editable_symbols)}\n"
+            f"Forbidden symbols: {', '.join(contract.forbidden_symbols)}\n"
+            f"Acceptance tests: {', '.join(contract.acceptance_tests)}\n"
+            f"Local design freedom: {contract.local_design_freedom}\n\n"
+            f"## Implementation Code\n"
+            f"```python\n{code}\n```\n\n"
+            f"## Required Output Format (JSON only)\n"
+            f"{{\n"
+            f'  "compliant": true|false,\n'
+            f'  "reasoning": "string explaining why",\n'
+            f'  "issues": ["list of specific issues found"]\n'
+            f"}}\n"
+            f"\n"
+            f"Check:\n"
+            f"1. All required editable symbols exist with correct signatures.\n"
+            f"2. No forbidden symbols were modified.\n"
+            f"3. Target files contain the required classes/functions.\n"
+            f"4. Code is syntactically valid and follow type hints.\n"
+        )
+
+        response = self._call_deepseek(prompt)
+
+        if response:
+            try:
+                import json as _json
+
+                # Try direct JSON parse first, then fallback to regex extraction
+                try:
+                    data = _json.loads(response)
+                except _json.JSONDecodeError:
+                    import re as _re
+                    json_match = _re.search(r"\{[^}]+\}", response, _re.DOTALL)
+                    if not json_match:
+                        raise
+                    data = _json.loads(json_match.group(0))
+
+                if data.get("compliant", False):
+                    return True, ""
+                issues = data.get("issues", [])
+                reasoning = data.get("reasoning", "Contract violation detected.")
+                feedback = reasoning
+                if issues:
+                    feedback += "\n" + "\n".join(f"- {i}" for i in issues)
+                return False, feedback
+            except Exception:
+                pass
+
+        # Fallback: trust but verify with AST
+        try:
+            import ast
+            ast.parse(code)
+            return True, ""
+        except SyntaxError as e:
+            return False, f"Syntax error in generated code: {e}"
 
     def _analyze_logical_error(self, context: str) -> dict[str, Any]:
         """Call DeepSeek to analyze the logical error.

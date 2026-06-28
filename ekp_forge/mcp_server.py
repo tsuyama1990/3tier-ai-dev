@@ -198,8 +198,16 @@ def run_managed_task(task_schema: dict) -> dict:
     planning_result = engine.run(Role.PLANNING, {"task": task, "triage_result": triage_result})
     plan = planning_result.get("plan", plan)
 
+    # Phase 2.5: Specification (generate WorkerContract) — contract-driven pipeline
+    spec_result = engine.run(Role.SPECIFICATION, {"task": task, "plan": plan})
+    worker_contract = spec_result.get("worker_contract")
+
     # Phase 3: Implementation (Worker: Aider + verification loop)
-    impl_result = engine.run(Role.IMPLEMENTATION, {"task": task, "plan": plan})
+    impl_context = {"task": task, "plan": plan}
+    if worker_contract is not None:
+        impl_context["worker_contract"] = worker_contract
+        impl_context["execution_mode"] = "contract"  # Signal to use contract-driven verification
+    impl_result = engine.run(Role.IMPLEMENTATION, impl_context)
 
     if impl_result.get("status") == "escalated":
         help_req = impl_result.get("help_request")
@@ -228,12 +236,16 @@ def run_managed_task(task_schema: dict) -> dict:
         }
 
     # Phase 4: Integration (validate outcome + generate ADR)
-    integration_result = engine.run(Role.INTEGRATION, {
+    # Use contract-driven semantic validation if contract is available
+    integration_context = {
         "task": task,
         "impl_result": impl_result,
         "error_chunk_summary": impl_result.get("error_chunk_summary"),
         "git_diff": impl_result.get("git_diff", ""),
-    })
+    }
+    if worker_contract is not None:
+        integration_context["worker_contract"] = worker_contract
+    integration_result = engine.run(Role.INTEGRATION, integration_context)
 
     if integration_result.get("status") == "failed":
         return {
