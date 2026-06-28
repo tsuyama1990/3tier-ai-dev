@@ -7,11 +7,28 @@ from unittest.mock import patch
 
 import pytest
 
+from ekp_forge.schemas.contract import (
+    Diagnostic,
+    DiagnosticCategory,
+    DiagnosticSeverity,
+)
 from ekp_forge.schemas.task_schema import (
     EscalationReason,
     TaskSchema,
 )
 from ekp_forge.worker import WorkerAgent
+
+
+# Helper to create a test diagnostic
+def _make_diag(category: DiagnosticCategory = DiagnosticCategory.TEST_FAILURE, msg: str = "failure") -> Diagnostic:
+    return Diagnostic(
+        tool="pytest",
+        severity=DiagnosticSeverity.ERROR,
+        file="tests/test_auth.py",
+        code="AssertionError",
+        message=msg,
+        category=category,
+    )
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -42,9 +59,9 @@ def worker() -> WorkerAgent:
 @pytest.fixture(autouse=True)
 def mock_ruff_mypy() -> Generator[None, None, None]:
     with (
-        patch("ekp_forge.worker.run_ruff", return_value=(True, "ruff ok")),
-        patch("ekp_forge.worker.run_mypy", return_value=(True, "mypy ok")),
         patch("ekp_forge.worker.setup_ruff_mypy"),
+        patch("ekp_forge.worker.run_verification_pipeline", return_value=[]),
+        patch("ekp_forge.sandbox.scoped_lint._changed_files", return_value=[]),
     ):
         yield
 
@@ -75,16 +92,16 @@ class TestVerificationLoopSuccess:
         """2回目の試行で成功した場合も status='success' が返ること"""
         call_count = [0]
 
-        def _run_pytest_side_effect() -> tuple[bool, str]:
+        def _verification_side_effect(**kwargs: object) -> list[Diagnostic]:
             call_count[0] += 1
             if call_count[0] == 1:
-                return False, "FAILED tests/test_auth.py::test_auth - AssertionError"
-            return True, "all passed"
+                return [_make_diag(msg="FAILED tests/test_auth.py::test_auth - AssertionError")]
+            return []
 
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch.object(worker, "_run_pytest", side_effect=_run_pytest_side_effect),
+            patch("ekp_forge.worker.run_verification_pipeline", side_effect=_verification_side_effect),
             patch.object(worker, "_get_git_diff", return_value="diff --git a/file.py b/file.py"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -103,22 +120,22 @@ class TestVerificationLoopFailure:
         # Lower threshold to avoid confidence drop escalation before max_retries
         worker.escalation_confidence_threshold = 0.0
         # Use different error messages each time to avoid cyclic error detection
-        error_outputs = [
+        error_messages = [
             "FAILED test_1.py - AssertionError: x",
             "FAILED test_2.py - TypeError: y",
             "FAILED test_3.py - ValueError: z",
         ]
         call_idx = [0]
 
-        def _run_pytest_side_effect() -> tuple[bool, str]:
+        def _verification_side_effect(**kwargs: object) -> list[Diagnostic]:
             idx = call_idx[0]
             call_idx[0] += 1
-            return False, error_outputs[idx]
+            return [_make_diag(msg=error_messages[idx])]
 
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch.object(worker, "_run_pytest", side_effect=_run_pytest_side_effect),
+            patch("ekp_forge.worker.run_verification_pipeline", side_effect=_verification_side_effect),
             patch.object(worker, "_git_rollback") as mock_rollback,
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -146,18 +163,15 @@ class TestVerificationLoopFailure:
 class TestEscalationCyclicError:
     def test_cyclic_error_detection(self, worker: WorkerAgent, task_schema: TaskSchema) -> None:
         """同じエラーが2回連続で status='escalated' / reason='cyclic_error'"""
-        pytest_output = "FAILED tests/test_auth.py::test_auth - AssertionError: expected 401"
+        diag = _make_diag(msg="FAILED tests/test_auth.py::test_auth - AssertionError: expected 401")
 
-        call_count = [0]
-
-        def _run_pytest_side_effect() -> tuple[bool, str]:
-            call_count[0] += 1
-            return False, pytest_output
+        def _verification_side_effect(**kwargs: object) -> list[Diagnostic]:
+            return [diag]
 
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch.object(worker, "_run_pytest", side_effect=_run_pytest_side_effect),
+            patch("ekp_forge.worker.run_verification_pipeline", side_effect=_verification_side_effect),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -169,12 +183,13 @@ class TestEscalationCyclicError:
 class TestEscalationContextMissing:
     def test_context_missing_attribute_error(self, worker: WorkerAgent, task_schema: TaskSchema) -> None:
         """AttributeError で status='escalated' / reason='missing_context'"""
+        # The escalation policy checks for "AttributeError" in the compressed error log
+        diag = _make_diag(msg="AttributeError: module 'X' has no attribute 'Y'")
+
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch.object(
-                worker, "_run_pytest", return_value=(False, "AttributeError: module 'X' has no attribute 'Y'")
-            ),
+            patch("ekp_forge.worker.run_verification_pipeline", return_value=[diag]),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -184,12 +199,12 @@ class TestEscalationContextMissing:
 
     def test_context_missing_module_not_found(self, worker: WorkerAgent, task_schema: TaskSchema) -> None:
         """ModuleNotFoundError で status='escalated' / reason='missing_context'"""
+        diag = _make_diag(msg="ModuleNotFoundError: No module named 'nonexistent'")
+
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch.object(
-                worker, "_run_pytest", return_value=(False, "ModuleNotFoundError: No module named 'nonexistent'")
-            ),
+            patch("ekp_forge.worker.run_verification_pipeline", return_value=[diag]),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -204,22 +219,22 @@ class TestEscalationConfidenceDrop:
         # Use high threshold and different errors each time to avoid cyclic detection
         worker.escalation_confidence_threshold = 0.7
 
-        error_outputs = [
+        error_messages = [
             "FAILED test_1.py - ValueError: a",
             "FAILED test_2.py - TypeError: b",
             "FAILED test_3.py - RuntimeError: c",
         ]
         call_idx = [0]
 
-        def _run_pytest_side_effect() -> tuple[bool, str]:
+        def _verification_side_effect(**kwargs: object) -> list[Diagnostic]:
             idx = call_idx[0]
             call_idx[0] += 1
-            return False, error_outputs[idx]
+            return [_make_diag(msg=error_messages[idx])]
 
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch.object(worker, "_run_pytest", side_effect=_run_pytest_side_effect),
+            patch("ekp_forge.worker.run_verification_pipeline", side_effect=_verification_side_effect),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -237,10 +252,12 @@ class TestEscalationConfidenceDrop:
 class TestErrorChunkAccumulation:
     def test_error_chunk_accumulates(self, worker: WorkerAgent, task_schema: TaskSchema) -> None:
         """各試行でエラーが ErrorChunkSummary に蓄積されること"""
+        diag = _make_diag(msg="FAILED test - AssertionError")
+
         with (
             patch.object(worker, "_run_aider", return_value=(True, "aider ok")),
             patch.object(worker, "_validate_imports", return_value=(True, "ok")),
-            patch.object(worker, "_run_pytest", return_value=(False, "FAILED test - AssertionError")),
+            patch("ekp_forge.worker.run_verification_pipeline", return_value=[diag]),
             patch.object(worker, "_git_rollback"),
         ):
             result = worker.execute_verification_loop(task_schema, "plan")
@@ -354,3 +371,72 @@ class TestCompressErrorLog:
         assert "Traceback" in compressed
         assert "AssertionError" in compressed
         assert "verbose setup output line 1" not in compressed
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.5: Mode dispatch tests
+# ---------------------------------------------------------------------------
+
+
+from ekp_forge.protocol.roles import Role
+
+
+class TestExecutionModeDispatch:
+    """Tests for research/production mode dispatch in WorkerAgent.execute()."""
+
+    def test_default_mode_uses_production_path(self) -> None:
+        """execution_mode が指定されていない場合、production パスが使われること"""
+        agent = WorkerAgent()
+        task_schema_id = _make_task().task_id  # create once for reuse
+        with patch.object(agent, "_run_with_worktree") as mock_prod:
+            mock_prod.return_value = {"status": "success", "retries": 0}
+            # No execution_mode → defaults to "production"
+            result = agent.execute({
+                "_role": Role.IMPLEMENTATION,
+                "task": _make_task(),
+                "plan": "test plan",
+            })
+            assert result["status"] == "success"
+            mock_prod.assert_called_once()
+
+    def test_research_mode_calls_research_method(self) -> None:
+        """research モードでは _execute_research_mode が呼ばれること"""
+        agent = WorkerAgent()
+        with patch.object(agent, "_execute_research_mode") as mock_research:
+            mock_research.return_value = {"status": "success", "retries": 0}
+            result = agent.execute({
+                "_role": Role.IMPLEMENTATION,
+                "task": _make_task(),
+                "plan": "test plan",
+                "execution_mode": "research",
+            })
+            assert result["status"] == "success"
+            mock_research.assert_called_once()
+
+    def test_production_mode_calls_worktree_method(self) -> None:
+        """production モードでは _run_with_worktree が呼ばれること"""
+        agent = WorkerAgent()
+        with patch.object(agent, "_run_with_worktree") as mock_prod:
+            mock_prod.return_value = {"status": "success", "retries": 0}
+            result = agent.execute({
+                "_role": Role.IMPLEMENTATION,
+                "task": _make_task(),
+                "plan": "test plan",
+                "execution_mode": "production",
+            })
+            assert result["status"] == "success"
+            mock_prod.assert_called_once()
+
+
+def _make_task() -> TaskSchema:
+    """Create a minimal valid TaskSchema for testing."""
+    from ekp_forge.schemas.task_schema import _generate_task_id
+
+    return TaskSchema(
+        task_id=_generate_task_id("test"),
+        manager_id="MGR-Test",
+        goal="test execution mode dispatch",
+        constraints=["test constraint"],
+        acceptance_tests=["test acceptance"],
+        affected_modules=["test.py"],
+    )

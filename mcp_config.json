@@ -6,6 +6,13 @@
             "env": {
                 "OLLAMA_HOST": "http://127.0.0.1:11434"
             }
+        },
+        "ekp-forge-manager": {
+            "command": "/home/tomo/project/000_devenv/ekp-forge/run-mcp-ekp.sh",
+            "args": [],
+            "env": {
+                "OLLAMA_HOST": "http://127.0.0.1:11434"
+            }
         }
     }
 }

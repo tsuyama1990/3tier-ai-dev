@@ -1,4 +1,11 @@
-"""ClonerAgent – copies files into isolated sandbox workspace."""
+"""ClonerAgent – copies files into isolated sandbox workspace.
+
+**DEPRECATED**: Use :class:`ekp_forge.sandbox.git_worktree.GitWorktree` instead.
+
+``clone_into()`` performs a full ``git clone --depth 1`` or recursive file copy,
+taking ∼300s per invocation. ``GitWorktree`` uses ``git worktree add`` which
+is millisecond-fast. This module is preserved for backward compatibility.
+"""
 
 from __future__ import annotations
 

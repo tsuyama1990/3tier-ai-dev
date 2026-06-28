@@ -1,0 +1,12 @@
+profile_name: "simple"
+description: "Single Worker handles everything except Manager oversight. Best for 7B-class local models."
+mode: production
+
+assignment:
+  requirement_review: "manager"
+  planning: "manager"
+  architecture: "manager"
+  specification: "manager"
+  implementation: "worker"
+  verification: "worker"
+  integration: "worker"

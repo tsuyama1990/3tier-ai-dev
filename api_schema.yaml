@@ -42,3 +42,5 @@ allowed_imports:
   - jinja2
   - multipart
   - pyjwt
+  - test_output
+  - ekp_forge

@@ -1,0 +1,272 @@
+"""Pydantic models for Phase 2: Contract-Driven Interface and Verification IR.
+
+This module defines the core data structures that transform the free-form
+``dict[str, Any]`` communication between roles into strictly-typed contracts:
+
+1. ``WorkerContract`` — Constrains Worker input to a minimal, bounded scope.
+2. ``Diagnostic`` — Standardized verification result (Verification IR) that
+   normalizes Ruff / Mypy / Pytest outputs into a single schema.
+3. ``FixTask`` — A single, focused fix assignment derived from a prioritised
+   list of ``Diagnostic`` items by the Fix Planner.
+"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+# ---------------------------------------------------------------------------
+# 1. WorkerContract — Worker への入力制約
+# ---------------------------------------------------------------------------
+
+
+class WorkerContract(BaseModel):
+    """Contract that constrains the Worker to a minimal, bounded scope.
+
+    The Specification role extracts the minimal code boundary from the
+    higher-level design and generates this contract. The Worker (Aider) is
+    **forbidden** from modifying anything outside the contract's scope.
+
+    Attributes:
+        contract_id:      Unique identifier for this contract instance.
+        objective:        Local implementation objective (single sentence).
+        target_files:     Files the Worker is allowed to modify.
+        editable_symbols: Functions/classes/methods the Worker may change.
+        forbidden_symbols:Signatures the Worker MUST NOT change or break.
+        acceptance_tests: Specific test cases that must pass.
+        implementation_steps: Step-by-step implementation instructions.
+        local_design_freedom: Whether Worker may introduce new local symbols.
+        knowledge_context: (Phase 3) Compressed library knowledge from Manager
+                          RAG. Injected into Worker prompt during fix loop.
+    """
+
+    model_config = ConfigDict(strict=True, frozen=True)
+
+    contract_id: str = Field(pattern=r"^C-\d{14}-[a-f0-9]{6}$")
+    objective: str = Field(max_length=500, min_length=1)
+    target_files: list[str] = Field(min_length=1)
+    editable_symbols: list[str] = Field(default_factory=list)
+    forbidden_symbols: list[str] = Field(default_factory=list)
+    acceptance_tests: list[str] = Field(default_factory=list)
+    implementation_steps: list[str] = Field(default_factory=list)
+    local_design_freedom: Literal["none", "within_file"] = "none"
+
+    # Phase 3: Compressed library knowledge from Manager RAG
+    knowledge_context: str = Field(
+        default="",
+        max_length=3000,
+        description="Compressed library knowledge for Worker (from Manager RAG).",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2. Diagnostic — 検証中間表現 (Verification IR)
+# ---------------------------------------------------------------------------
+
+
+class DiagnosticSeverity(StrEnum):
+    ERROR = "error"
+    WARNING = "warning"
+
+
+class DiagnosticCategory(StrEnum):
+    SYNTAX = "syntax"
+    IMPORT = "import"
+    TYPE_MISMATCH = "type_mismatch"
+    WRONG_RETURN_VALUE = "wrong_return_value"
+    UNDEFINED_NAME = "undefined_name"
+    UNUSED_IMPORT = "unused_import"
+    UNUSED_VARIABLE = "unused_variable"
+    FORMATTING = "formatting"
+    TEST_FAILURE = "test_failure"
+    SECURITY = "security"
+    OTHER = "other"
+
+
+class Diagnostic(BaseModel):
+    """A single, tool-independent diagnostic entry (Verification IR).
+
+    Normalises output from Ruff, Mypy, Pytest, Gatekeeper, etc. into a
+    unified schema so that downstream roles (Fix Planner, Worker) never
+    need to parse raw tool output.
+
+    Attributes:
+        tool:     Source tool that produced this diagnostic.
+        severity: Severity level.
+        file:     File path relative to project root.
+        line:     Line number where the issue occurs.
+        code:     Tool-specific error code (e.g. "F821", "mypy-arg-type").
+        message:  Structured, human-readable description.
+        category: Semantic category for prioritisation.
+        expected: Expected value (used by Pytest assertions).
+        actual:   Actual runtime value (used by Pytest assertions).
+    """
+
+    model_config = ConfigDict(strict=True, frozen=True)
+
+    tool: Literal["ruff", "mypy", "pytest", "gatekeeper"]
+    severity: DiagnosticSeverity
+    file: str
+    line: int = 0
+    code: str = ""
+    message: str = Field(max_length=2000, min_length=1)
+    category: DiagnosticCategory = DiagnosticCategory.OTHER
+    expected: str | None = None
+    actual: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# 3. FixTask — Fix Planner → Worker への単一修正指示 (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+class FixTask(BaseModel):
+    """A single, focused fix assignment generated by the Fix Planner.
+
+    The Fix Planner receives a ``list[Diagnostic]`` from the Verification
+    role, prioritises them (Syntax > Import > Type > Test), and produces
+    a ``FixTask`` that addresses **only** the highest-priority issues. The
+    Worker receives one ``FixTask`` at a time to prevent cognitive overload.
+
+    Attributes:
+        task_id:       Unique identifier for this fix task.
+        contract:      The original ``WorkerContract`` that was active.
+        diagnostics:   The subset of ``Diagnostic`` items to fix.
+        priority:      Priority level (1 = highest).
+        instruction:   Concise instruction for the Worker.
+    """
+
+    model_config = ConfigDict(strict=True, frozen=False)
+
+    task_id: str = Field(pattern=r"^FT-\d{14}-[a-f0-9]{6}$")
+    contract: WorkerContract
+    diagnostics: list[Diagnostic] = Field(min_length=1)
+    priority: int = Field(ge=1, le=4)
+    instruction: str = Field(max_length=2000, min_length=1)
+
+
+# ---------------------------------------------------------------------------
+# 4. Reference — Phase 4 構造化ヒント
+# ---------------------------------------------------------------------------
+
+
+class Reference(BaseModel):
+    """Structured hint material attached to a FixTask by the Hint Generator.
+
+    Phase 4: Each Reference is a deterministic, non-LLM-generated hint
+    produced by the Hint Generator based on error type.
+
+    Attributes:
+        reference_type: Type of reference (introspection, signature, module_list, etc.).
+        target:         The module/object/function the reference applies to.
+        content:        The structured reference content (formatted for prompt injection).
+        source_tool:    The tool that generated this reference.
+    """
+
+    model_config = ConfigDict(strict=True, frozen=True)
+
+    reference_type: Literal[
+        "introspection_dir",
+        "function_signature",
+        "valid_modules",
+        "expected_vs_actual",
+        "source_code_context",
+    ]
+    target: str = Field(max_length=200)
+    content: str = Field(max_length=3000, min_length=1)
+    source_tool: str = Field(default="hint_generator", max_length=50)
+
+
+# ---------------------------------------------------------------------------
+# 5. FixTaskV2 — Phase 4 契約駆動型修正指示
+# ---------------------------------------------------------------------------
+
+
+class FixTaskV2(BaseModel):
+    """Enhanced FixTask for Phase 4 contract-driven repair.
+
+    Unlike FixTask (Phase 2) which sends a whole-file + instruction,
+    FixTaskV2 enables function-level isolation:
+
+    - ``target_symbol`` pins the exact function/class-method to fix.
+    - ``editable_scope`` tells the slicer whether it's a top-level
+      function or a class method.
+    - ``references`` carries structured hints from the Hint Generator.
+    - ``acceptance`` lists conditions that the fix must satisfy.
+
+    The Worker receives ONLY the sliced function code, never the
+    full file, preventing collateral damage to unrelated code.
+
+    Attributes:
+        task_id:        Unique identifier for this fix task.
+        target_file:    The file containing the target symbol.
+        target_symbol:  The function/class-method name to fix.
+        editable_scope: Whether the scope is a function or class method.
+        diagnostics:    Diagnostics from the current TieredDiagnostic stage.
+        references:     Structured hints from the Hint Generator.
+        acceptance:     Verification conditions to pass after fix.
+    """
+
+    model_config = ConfigDict(strict=True, frozen=False)
+
+    task_id: str = Field(pattern=r"^FTV2-\d{14}-[a-f0-9]{6}$")
+    target_file: str
+    target_symbol: str = Field(max_length=200, min_length=1)
+    editable_scope: Literal["function", "class_method"]
+    diagnostics: list[Diagnostic] = Field(min_length=1)
+    references: list[Reference] = Field(default_factory=list)
+    acceptance: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# 6. Priority helpers
+# ---------------------------------------------------------------------------
+
+# Maps DiagnosticCategory → priority (1 = highest)
+CATEGORY_PRIORITY: dict[DiagnosticCategory, int] = {
+    DiagnosticCategory.SYNTAX: 1,
+    DiagnosticCategory.IMPORT: 2,
+    DiagnosticCategory.UNDEFINED_NAME: 2,
+    DiagnosticCategory.UNUSED_IMPORT: 2,
+    DiagnosticCategory.TYPE_MISMATCH: 3,
+    DiagnosticCategory.UNUSED_VARIABLE: 3,
+    DiagnosticCategory.FORMATTING: 3,
+    DiagnosticCategory.WRONG_RETURN_VALUE: 4,
+    DiagnosticCategory.TEST_FAILURE: 4,
+    DiagnosticCategory.SECURITY: 1,
+    DiagnosticCategory.OTHER: 4,
+}
+
+
+def diagnostic_priority(d: Diagnostic) -> int:
+    """Return the numeric priority for a single Diagnostic (lower = more urgent)."""
+    return CATEGORY_PRIORITY.get(d.category, 4)
+
+
+def group_diagnostics_by_priority(
+    diagnostics: list[Diagnostic],
+) -> dict[int, list[Diagnostic]]:
+    """Group diagnostics by priority level.
+
+    Returns a dict keyed by priority (1–4) with the corresponding
+    ``Diagnostic`` items.
+    """
+    groups: dict[int, list[Diagnostic]] = {1: [], 2: [], 3: [], 4: []}
+    for d in diagnostics:
+        pri = diagnostic_priority(d)
+        groups[pri].append(d)
+    return groups
+
+
+def filter_auto_fixable(diagnostics: list[Diagnostic]) -> list[Diagnostic]:
+    """Return only diagnostics that are *not* auto-fixable (e.g. unsafe ruff fixes).
+
+    Diagnostics with category == ``FORMATTING`` or ``UNUSED_IMPORT`` are
+    considered auto-fixable by ``ruff check --fix`` and will be resolved
+    before the IR is generated.
+    """
+    auto_fixable = {DiagnosticCategory.FORMATTING, DiagnosticCategory.UNUSED_IMPORT}
+    return [d for d in diagnostics if d.category not in auto_fixable]

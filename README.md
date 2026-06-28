@@ -123,7 +123,8 @@ ekp-forge/
 ├── api_schema.yaml                   # MVG import whitelist
 ├── mcp_config.json                   # MCP server configuration
 ├── pyproject.toml                    # Project configuration (Ruff, Mypy settings)
-├── run-mcp.sh                        # MCP server launcher script
+├── run-mcp.sh                        # MCP server launcher (aider-orchestrator)
+├── run-mcp-ekp.sh                    # MCP server launcher (ekp-forge-manager, DeepSeek API)
 ├── skills.md                         # Executable skill definitions for AI agents
 ├── .cursorrules                      # Workspace rules for AI coding agents
 └── README.md                         # This file
@@ -347,26 +348,31 @@ flowchart TD
 
 ## 6. MCP Server Integration
 
-EKP-Forge exposes an **MCP (Model Context Protocol)** server that allows AI agents (Claude Desktop, Cursor, etc.) to delegate tasks directly to the pipeline.
+EKP-Forge provides **two stdio-based MCP servers** for AI agent delegation (Claude Desktop, Cursor, VS Code, etc.).
 
-### Server Entry Point
-[`ekp_forge/mcp_server.py`](ekp_forge/mcp_server.py)
+### Server 1: `aider-orchestrator` (Aider MCP Bridge)
 
-The server is launched via [`run-mcp.sh`](run-mcp.sh), which wraps `aider-mcp` (the Aider MCP bridge). The script dynamically resolves `OPENROUTER_API_KEY` from `~/.zshrc` and passes the orchestrator path to aider-mcp.
+[`run-mcp.sh`](run-mcp.sh) wraps `aider-mcp` (the Aider MCP bridge) for direct Aider access.
+Dynamically resolves `OPENROUTER_API_KEY` from `~/.zshrc`.
 
-### Exposed Tools
+### Server 2: `ekp-forge-manager` (EKP-Forge Manager MCP)
 
-| Tool | Description |
-|---|---|
-| `execute_simple_aider` | Run Aider with a plain prompt, no static analysis or self-repair |
-| `execute_strict_compile` | Full `run_3tier_dev` pipeline: sandbox → Aider → verification → integration |
-| `run_managed_task` | Full managed pipeline: triage → architect → worker → verify → integrate |
-| `run_epic_task` | Decompose epic into subtasks, execute in parallel via TaskTree |
-| `generate_task_id` | Generate a deterministic task ID from a goal string |
+[`run-mcp-ekp.sh`](run-mcp-ekp.sh) launches [`ekp_forge/mcp_server.py`](ekp_forge/mcp_server.py) which exposes EKP-Forge's full pipeline as MCP tools.
+Uses **DeepSeek V4 Flash API** (`DEEPSEEK_API_KEY`) for the Manager/validation layer and **Ollama qwen2.5-coder:7b** (via Aider) for the Worker/code-generation layer.
 
-### Configuration
+### Exposed Tools (ekp-forge-manager)
 
-The MCP server is configured via [`mcp_config.json`](mcp_config.json) and launched via [`run-mcp.sh`](run-mcp.sh):
+| Tool | Description | Tier |
+|---|---|---|
+| `execute_simple_aider` | Run Aider with a plain prompt, no static analysis | Worker only |
+| `execute_strict_compile` | Full pipeline: Aider → verification → integration | Manager + Worker |
+| `run_managed_task` | Full managed pipeline: triage → architect → worker → verify → integrate | **Director → Manager → Worker** |
+| `run_epic_task` | Decompose epic into subtasks, execute in parallel via TaskTree | Director → Manager |
+| `generate_task_id` | Generate a deterministic task ID from a goal string | Utility |
+
+### Configuration (`mcp_config.json`)
+
+Both servers are registered in [`mcp_config.json`](mcp_config.json):
 
 ```json
 {
@@ -377,30 +383,50 @@ The MCP server is configured via [`mcp_config.json`](mcp_config.json) and launch
             "env": {
                 "OLLAMA_HOST": "http://127.0.0.1:11434"
             }
+        },
+        "ekp-forge-manager": {
+            "command": "/path/to/ekp-forge/run-mcp-ekp.sh",
+            "args": [],
+            "env": {
+                "OLLAMA_HOST": "http://127.0.0.1:11434"
+            }
         }
     }
 }
 ```
 
-### Preloading the Ollama Model
+### Auto-starting Ollama
 
-MCP tools (especially `execute_simple_aider` and `execute_strict_compile`) rely on Ollama for code generation. If the model is not loaded into memory, the first request will incur a ~4.7 GB load time that can cause a timeout (default: 30–120s).
-
-**Recommended startup sequence**:
+Both `run-mcp.sh` and `run-mcp-ekp.sh` automatically detect if Ollama is running and start it if needed:
 
 ```bash
-# 1. Preload the model into memory (keeps it warm globally)
-ollama run qwen2.5-coder:7b --keep-alive -1 &
-sleep 2  # wait for model to initialize
-
-# 2. Start the MCP server (run from ekp-forge repo root)
-cd /path/to/ekp-forge
-./run-mcp.sh
+if ! curl -s http://127.0.0.1:11434/api/tags > /dev/null 2>&1; then
+    ollama serve &   # background
+    disown
+    # Wait up to 10 seconds for readiness
+fi
 ```
 
-> **Note**: `ollama run` is a system-wide command — it loads the model into memory regardless of which directory you run it from. You only need to do this once per machine session. The `--keep-alive -1` flag keeps the model resident in GPU/CPU memory indefinitely, preventing timeout on subsequent requests.
->
-> `run-mcp.sh` can be executed from **any project directory** — the `--aider-path` uses an absolute path to ekp-forge's orchestrator, and `--repo-path` dynamically captures the current working directory via `$(pwd)`. For other projects, simply set `command` in `mcp_config.json` to the absolute path of `run-mcp.sh`.
+### Manager Model Routing (`manager.py`)
+
+[`ekp_forge/manager.py`](ekp_forge/manager.py) supports three LLM backends for validation, tried in order:
+
+| Priority | Method | Model | Use Case |
+|----------|--------|-------|----------|
+| 1st | `_call_deepseek()` | `deepseek-chat` (API) | Fast planning/validation |
+| 2nd | `_call_ollama()` | `qwen2.5-coder:7b` (local) | Free local fallback |
+| 3rd | `_call_openrouter()` | `gpt-4o-mini` (API) | Cloud fallback |
+
+### Known Issue: 2-Tier Protocol Compliance
+
+In the **2-tier model** (Director+Manager=DeepSeek, Worker=Ollama, no MCP server), the top-tier model can bypass the delegation protocol because:
+
+1. **No code enforcement**: Unlike the 3-tier MCP setup, there is no server code validating the workflow
+2. **Incentive mismatch**: The top-tier model (DeepSeek) knows it can generate better code than the Worker (7B), creating temptation to skip delegation
+3. **Fix cycle regression**: When the Worker model (7B) is asked to fix code, it tends to regenerate the entire file, losing unrelated working code. **Surgical fixes should be applied by the Manager via `apply_diff`, not delegated back to the Worker**
+
+**Mitigation**: Use the 3-tier MCP setup (`ekp-forge-manager`) which enforces the protocol through `run_managed_task` → `WorkflowEngine`.
+For 2-tier testing, see [`plans/2layer_abm_fbs_capability_plan.md`](plans/2layer_abm_fbs_capability_plan.md).
 
 For Claude Desktop integration and detailed Aider setup, see [`docs/detailed_guide.md`](docs/detailed_guide.md).
 

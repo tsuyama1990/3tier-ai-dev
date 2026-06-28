@@ -1,4 +1,9 @@
-"""Manager Agent — Tier 2: triage, validation, ADR generation, and help request handling."""
+"""Manager Agent — Tier 2: triage, validation, ADR generation, and help request handling.
+
+Now implements ``BaseAgent`` for compatibility with the Role-based Protocol
+Architecture (AgentRegistry + WorkflowEngine). All existing public methods
+are preserved for backward compatibility.
+"""
 
 from __future__ import annotations
 
@@ -9,9 +14,15 @@ import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
+
+import math
 
 import yaml
 
+from ekp_forge.agents.base import BaseAgent, ExecutionTier
+from ekp_forge.protocol.capability import Capability
+from ekp_forge.protocol.roles import Role
 from ekp_forge.schemas.task_schema import (
     ChallengeObjection,
     ChallengeResult,
@@ -26,8 +37,29 @@ from ekp_forge.schemas.task_schema import (
 # ---------------------------------------------------------------------------
 
 
-class ManagerAgent:
-    """Receives structured tasks, validates, triages, and oversees Worker execution."""
+class ManagerAgent(BaseAgent):
+    """Receives structured tasks, validates, triages, and oversees Worker execution.
+
+    Implements ``BaseAgent`` for protocol compatibility. The ``execute()``
+    method dispatches to existing methods based on the ``_role`` key in
+    the context dict.
+
+    Phase 3 additions:
+    - Declares ``capabilities`` including RAG_SEARCH for knowledge base lookups.
+    - ``execution_tier`` defaults to ``"local"`` but may be set to ``"cloud"``
+      for high-context planning roles.
+    """
+
+    agent_id: str = "manager"
+    capabilities: list[Capability] = [
+        Capability.REQUIREMENT_REVIEW,
+        Capability.PLANNING,
+        Capability.ARCHITECTURE_REVIEW,
+        Capability.SPECIFICATION,
+        Capability.INTEGRATION,
+        Capability.RAG_SEARCH,  # Phase 3: knowledge base search
+    ]
+    execution_tier: ExecutionTier = "local"
 
     def __init__(self, manager_id: str = "MGR-Default-01") -> None:
         self.manager_id = manager_id
@@ -35,6 +67,59 @@ class ManagerAgent:
         self._decisions_dir.mkdir(parents=True, exist_ok=True)
         self._last_challenge_result: ChallengeResult | None = None
         self._last_success_patterns: list = []
+
+    # -------------------------------------------------------------------
+    # BaseAgent Protocol (Role-based Protocol Architecture)
+    # -------------------------------------------------------------------
+
+    def execute(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Dispatch to the appropriate method based on the role context.
+
+        This is the ``BaseAgent`` interface implementation. It reads the
+        ``_role`` key from context to determine which internal method to
+        call. Exceptions propagate transparently — no try/except here.
+
+        Supported roles:
+        - ``REQUIREMENT_REVIEW``: calls ``triage()``
+        - ``PLANNING``:           calls ``triage()`` (plan generation phase)
+        - ``ARCHITECTURE``:       calls ``triage()`` (ADR compliance check)
+        - ``INTEGRATION``:        calls ``generate_adr()``
+        """
+        role: Role | None = context.get("_role")
+        task: TaskSchema | None = context.get("task")
+
+        if role in (Role.REQUIREMENT_REVIEW, Role.PLANNING, Role.ARCHITECTURE):
+            if task is None:
+                raise ValueError(f"ManagerAgent.execute(): 'task' required for role {role}")
+            triage_status, triage_result = self.triage(task)
+            if triage_status == "REJECT":
+                return {"status": "rejected", "rejection_reason": triage_result, "plan": triage_result}
+            return {"status": "accepted", "plan": triage_result}
+
+        if role == Role.SPECIFICATION:
+            # Defer to planning phase for now
+            if task is None:
+                raise ValueError(f"ManagerAgent.execute(): 'task' required for role {role}")
+            triage_status, triage_result = self.triage(task)
+            return {"status": triage_status.lower(), "plan": triage_result}
+
+        if role == Role.INTEGRATION:
+            if task is None:
+                raise ValueError(f"ManagerAgent.execute(): 'task' required for role {role}")
+            error_chunk = context.get("error_chunk_summary")
+            if error_chunk is None:
+                from ekp_forge.schemas.task_schema import ErrorChunkSummary
+
+                error_chunk = ErrorChunkSummary(task_id=task.task_id)
+            git_diff = context.get("git_diff", "")
+            validation_ok, feedback = self.validate_outcome(task, git_diff, error_chunk)
+            if not validation_ok:
+                return {"status": "failed", "feedback": feedback}
+            adr_path = self.generate_adr(task=task, error_chunk=error_chunk)
+            return {"status": "success", "adr_path": adr_path, "validation_feedback": feedback}
+
+        # Role not handled by ManagerAgent
+        return {"status": "skipped", "reason": f"Role {role} not handled by ManagerAgent"}
 
     # -------------------------------------------------------------------
     # Triage
@@ -179,8 +264,10 @@ class ManagerAgent:
             allowed_imports = set(schema.get("allowed_imports", []))
             # Check if any constraint references disallowed imports
             for constraint in task.constraints:
-                # Look for import references in constraints
-                import_matches = re.findall(r"(?:import|from)\s+(\w+)", constraint)
+                # Only match actual Python import statements, not natural language
+                # "Import X from Y" in a constraint is an instruction to the Worker,
+                # not an actual import that the pipeline uses
+                import_matches = re.findall(r"^(?:import|from)\s+(\w+)", constraint.strip(), re.MULTILINE)
                 for pkg in import_matches:
                     if pkg not in allowed_imports and not pkg.startswith("_"):
                         return (
@@ -227,6 +314,67 @@ class ManagerAgent:
             pass
         return None
 
+    # ------------------------------------------------------------------
+    # Phase 3: Knowledge Base Search (Deterministic Keyword/BM25)
+    # ------------------------------------------------------------------
+
+    def _search_knowledge_base(self, query: str, top_k: int = 3) -> list[dict[str, str | float]]:
+        """Search ``.ai-knowledge/libs/`` for relevant package documentation.
+
+        Deterministic keyword/BM25 search — no embeddings, no LLM calls.
+        Because harvested docs are cleanly organized by package/module name,
+        error messages like ``AttributeError: module 'fastapi' has no attribute 'X'``
+        provide clear deterministic search targets.
+
+        Args:
+            query: The search query (e.g., task goal + constraints).
+            top_k: Maximum number of results to return.
+
+        Returns:
+            List of dicts with keys: ``package``, ``relevance``, ``excerpt``, ``filepath``.
+        """
+        knowledge_dir = Path(".ai-knowledge") / "libs"
+        if not knowledge_dir.exists():
+            return []
+
+        results: list[dict[str, str | float]] = []
+        query_tokens = query.lower().split()
+        all_md_files = sorted(knowledge_dir.glob("*.md"))
+        total_docs = len(all_md_files)
+
+        if not query_tokens or total_docs == 0:
+            return []
+
+        for md_file in all_md_files:
+            content = md_file.read_text(encoding="utf-8")
+            first_line = content.split("\n")[0] if content else ""
+            package_name = first_line.replace("# ", "").split(" v")[0]
+
+            # BM25-inspired scoring: term frequency * inverse document frequency
+            content_lower = content.lower()
+            word_count = max(len(content_lower.split()), 1)
+            score = 0.0
+            for token in query_tokens:
+                tf = content_lower.count(token) / word_count
+                idf = max(0.0, math.log((total_docs + 1) / (1 + 1)))
+                score += tf * idf
+
+            if score > 0:
+                sections = content.split("## ")
+                excerpt = sections[1][:300] if len(sections) > 1 else content[:300]
+
+                results.append(
+                    {
+                        "package": package_name,
+                        "relevance": round(score, 4),
+                        "excerpt": excerpt,
+                        "filepath": str(md_file),
+                    }
+                )
+
+        results.sort(key=lambda r: r["relevance"], reverse=True)  # type: ignore[typeddict-item]
+        return results[:top_k]
+
     def _generate_implementation_plan(self, task: TaskSchema, extra_context: str = "") -> str:
         """Generate an implementation plan from the task schema.
 
@@ -257,6 +405,16 @@ class ManagerAgent:
         for r in relevant:
             summary = r["decision"][:200]
             lines.append(f"- [{r['file']}] (relevance: {r['score']:.2f}) {summary}")
+
+        # Phase 3: Search knowledge base for relevant external library docs
+        knowledge_results = self._search_knowledge_base(query)
+        if knowledge_results:
+            lines.append("")
+            lines.append("## External Library Knowledge")
+            for kr in knowledge_results:
+                lines.append(f"### {kr['package']} (relevance: {kr['relevance']:.2f})")
+                lines.append(str(kr["excerpt"]))
+                lines.append("")
 
         lines.extend(
             [
@@ -416,10 +574,16 @@ class ManagerAgent:
         # Build prompt
         prompt = self._build_validation_prompt(task, git_diff, error_chunk)
 
-        # Try Ollama first
+        # Try DeepSeek first (fastest for planning/validation)
+        deepseek_response = self._call_deepseek(prompt)
+        if deepseek_response is not None:
+            quality_ok, feedback = self._check_ollama_quality(deepseek_response)
+            if quality_ok:
+                return feedback
+
+        # Try Ollama second (local, free)
         ollama_response = self._call_ollama(prompt)
         if ollama_response is not None:
-            # Quality check
             quality_ok, feedback = self._check_ollama_quality(ollama_response)
             if quality_ok:
                 return feedback
@@ -431,7 +595,7 @@ class ManagerAgent:
             if quality_ok:
                 return feedback
 
-        # Both failed — return safe default
+        # All failed — return safe default
         return ""
 
     def _build_validation_prompt(
@@ -540,6 +704,42 @@ Decision: APPROVE
                 result = json.loads(resp.read().decode())
                 return result.get("choices", [{}])[0].get("message", {}).get("content", "")
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+            return None
+
+    def _call_deepseek(self, prompt: str) -> str | None:
+        """Call DeepSeek API via urllib.request. Returns response text or None on failure."""
+        import urllib.error
+        import urllib.request
+
+        api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+        if not api_key:
+            return None
+
+        data = json.dumps(
+            {
+                "model": "deepseek-chat",
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+            }
+        ).encode()
+
+        req = urllib.request.Request(
+            "https://api.deepseek.com/v1/chat/completions",
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode())
+                return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as e:
+            import sys
+
+            print(f"[DeepSeek API error] {e}", file=sys.stderr)
             return None
 
     def _check_ollama_quality(self, response: str) -> tuple[bool, str]:
@@ -707,6 +907,172 @@ Validation passed with {error_chunk.total_retries} retries.
                     pass
 
         return "\n\n".join(context_parts) if context_parts else ""
+
+    # -------------------------------------------------------------------
+    # Phase 4: Logical Error Escalation (Pytest failure after max retries)
+    # -------------------------------------------------------------------
+
+    def handle_logical_error_escalation(
+        self,
+        task: Any,
+        fix_task: Any,  # FixTaskV2 (avoid import-time circular issues)
+        original_source: str,
+        worker_fixed_source: str | None,
+        diagnostics: list[Any],  # list[Diagnostic]
+        iteration_count: int,
+    ) -> dict[str, Any]:
+        """Handle escalation when Pytest logical errors remain after fix loop.
+
+        Phase 6 escalation boundary. The Manager (DeepSeek) analyzes whether
+        the Contract design is wrong or the Worker implementation is wrong.
+
+        Args:
+            task:                The TaskSchema.
+            fix_task:            The FixTaskV2 that the Worker couldn't resolve.
+            original_source:     The original source code before any fix attempts.
+            worker_fixed_source: The Worker's last fix attempt (if any).
+            diagnostics:         Remaining Pytest diagnostics.
+            iteration_count:     Number of fix iterations attempted.
+
+        Returns:
+            Dict with status:
+            - ``"contract_redesign"``: Manager will redesign the WorkerContract.
+            - ``"manager_patch_applied"``: Manager applied a direct fix.
+            - ``"escalate_human"``: Cannot resolve — escalate to human.
+        """
+        context = self._build_logical_error_context(
+            task,
+            fix_task,
+            original_source,
+            worker_fixed_source,
+            diagnostics,
+            iteration_count,
+        )
+
+        analysis = self._analyze_logical_error(context)
+
+        if analysis.get("verdict") == "contract_design":
+            return {
+                "status": "contract_redesign",
+                "analysis": analysis,
+                "message": "Contract design error detected. Redesigning contract.",
+            }
+
+        if analysis.get("verdict") == "worker_implementation":
+            patch_result = self._apply_manager_patch(
+                fix_task.target_file,
+                fix_task.target_symbol,
+                analysis.get("patch", ""),
+            )
+            if patch_result:
+                return {
+                    "status": "manager_patch_applied",
+                    "analysis": analysis,
+                    "message": "Manager applied direct patch via FunctionSlicer.",
+                }
+            return {
+                "status": "escalate_human",
+                "analysis": analysis,
+                "message": "Manager patch failed — requires human intervention.",
+            }
+
+        return {
+            "status": "escalate_human",
+            "analysis": analysis,
+            "message": "Manager could not determine root cause — requires human intervention.",
+        }
+
+    def _build_logical_error_context(
+        self,
+        task: Any,
+        fix_task: Any,
+        original_source: str,
+        worker_fixed_source: str | None,
+        diagnostics: list[Any],
+        iteration_count: int,
+    ) -> str:
+        """Build a structured context string for DeepSeek analysis."""
+        lines = [
+            "# Logical Error Escalation",
+            f"## Task: {task.task_id}",
+            f"Goal: {task.goal}",
+            f"Target: {fix_task.target_file}:{fix_task.target_symbol}",
+            f"Fix iterations attempted: {iteration_count}",
+            "",
+            "## Original Source",
+            f"```python\n{original_source}\n```",
+        ]
+
+        if worker_fixed_source:
+            lines.extend(
+                [
+                    "",
+                    "## Worker's Last Fix Attempt",
+                    f"```python\n{worker_fixed_source}\n```",
+                ]
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Remaining Diagnostics (Pytest)",
+            ]
+        )
+        for d in diagnostics:
+            lines.append(f"- {d.tool}: {d.message}")
+
+        lines.extend(
+            [
+                "",
+                "## Question",
+                "Is this a CONTRACT DESIGN error (the specification/contract is wrong)",
+                "or a WORKER IMPLEMENTATION error (the Worker failed to implement correctly)?",
+                "",
+                "Respond in JSON format:",
+                '{"verdict": "contract_design" | "worker_implementation", "reasoning": "...", "patch": "..."}',
+            ]
+        )
+
+        return "\n".join(lines)
+
+    def _analyze_logical_error(self, context: str) -> dict[str, Any]:
+        """Call DeepSeek to analyze the logical error.
+
+        Returns a dict with verdict, reasoning, and optional patch code.
+        """
+        response = self._call_deepseek(context)
+        if response is None:
+            return {"verdict": "unknown", "reasoning": "Failed to call DeepSeek"}
+
+        # Try to parse JSON from response
+        import json
+
+        json_match = re.search(r"\{[^}]+\}", response, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        return {
+            "verdict": "unknown",
+            "reasoning": f"Could not parse DeepSeek response: {response[:500]}",
+        }
+
+    def _apply_manager_patch(
+        self,
+        file_path: str,
+        symbol_name: str,
+        patch_source: str,
+    ) -> bool:
+        """Apply a direct patch from the Manager using FunctionSlicer."""
+        try:
+            from ekp_forge.sandbox.slicer import FunctionSlicer
+
+            slicer = FunctionSlicer()
+            return slicer.inject_fix_to_file(file_path, symbol_name, patch_source)
+        except Exception:
+            return False
 
     def decompose_epic(self, epic: TaskSchema) -> list[TaskSchema]:
         """

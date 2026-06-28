@@ -48,28 +48,34 @@ class TestMCPServer(unittest.TestCase):
 
         self.assertEqual(result, {"success": False, "stdout": "Aider failed", "stderr": "Error trace"})
 
-    @patch("ekp_forge.mcp_server.run_3tier_dev")
-    def test_execute_strict_compile(self, mock_run_3tier):
+    @patch("ekp_forge.mcp_server.run_managed_task")
+    def test_execute_strict_compile(self, mock_run_managed):
+        """execute_strict_compile now delegates to run_managed_task via WorkflowEngine."""
         mock_output = {
-            "success": True,
-            "files_changed": ["main.py"],
             "status": "success",
-            "stdout": "Compiled successfully",
-            "stderr": "",
+            "task_id": "T-20260627000000-abcdef",
+            "adr_path": None,
+            "rejection_reason": None,
+            "help_request": None,
+            "error_summary": None,
         }
-        mock_run_3tier.return_value = mock_output
+        mock_run_managed.return_value = mock_output
 
         result = execute_strict_compile(
-            prompt="compile project", target_pkg="my_pkg", target_files=["main.py"], model="ollama/qwen2.5-coder:7b"
-        )
-
-        mock_run_3tier.assert_called_once_with(
             prompt="compile project",
             target_pkg="my_pkg",
             target_files=["main.py"],
             model="ollama/qwen2.5-coder:7b",
-            timeout=600,
         )
+
+        # Verify run_managed_task was called with a TaskSchema dict
+        mock_run_managed.assert_called_once()
+        call_arg = mock_run_managed.call_args[0][0]
+        self.assertIsInstance(call_arg, dict)
+        self.assertEqual(call_arg.get("goal"), "compile project")
+        self.assertEqual(call_arg.get("affected_modules"), ["main.py"])
+        self.assertIn("task_id", call_arg)
+        self.assertIn("manager_id", call_arg)
 
         self.assertEqual(result, mock_output)
 

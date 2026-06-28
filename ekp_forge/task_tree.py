@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from ekp_forge.manager import ManagerAgent
     from ekp_forge.worker import WorkerAgent
 
+from ekp_forge.protocol.roles import Role
 from ekp_forge.schemas.task_schema import TaskSchema
 
 
@@ -75,8 +76,13 @@ class TaskTree:
 
             plan = triage_result
 
-            # Step 2: Worker execute verification loop
-            worker_result = worker.execute_verification_loop(node.task, plan)
+            # Step 2: Worker execute via mode-aware dispatch
+            worker_result = worker.execute({
+                "_role": Role.IMPLEMENTATION,
+                "task": node.task,
+                "plan": plan,
+                # execution_mode is NOT set here — WorkerAgent defaults to "production"
+            })
 
             # Step 3: Validation if worker was successful
             if worker_result.get("status") == "success":

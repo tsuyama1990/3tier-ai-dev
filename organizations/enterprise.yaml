@@ -1,0 +1,15 @@
+profile_name: "enterprise"
+description: >-
+  Full 7-role separation with multiple Workers and specialized Verifiers.
+  Requires multiple agent implementations registered in AgentRegistry.
+  Suitable for scenarios using different models per role.
+mode: production
+
+assignment:
+  requirement_review: "challenge_agent"
+  planning: "planner_agent"
+  architecture: "architect_agent"
+  specification: "spec_agent"
+  implementation: ["worker_a", "worker_b"]
+  verification: ["ruff_checker", "mypy_checker", "adversarial_reviewer"]
+  integration: "integrator_agent"

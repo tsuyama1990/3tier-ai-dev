@@ -1,0 +1,12 @@
+profile_name: "three_tier"
+description: "Classic 3-tier: Manager plans + reviews, Worker implements, Verification gate. Best for mid-range models."
+mode: production
+
+assignment:
+  requirement_review: "manager"
+  planning: "manager"
+  architecture: "manager"
+  specification: "manager"
+  implementation: "worker"
+  verification: "verification_gate"
+  integration: "manager"

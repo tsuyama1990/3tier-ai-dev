@@ -29,13 +29,56 @@ except Exception:  # pragma: no cover
 
     FastMCP = _FastMCPStub  # type: ignore[misc,assignment]
 
+import os
+
+from ekp_forge.agents.registry import AgentRegistry
+from ekp_forge.engine.workflow import WorkflowEngine
 from ekp_forge.manager import ManagerAgent
 from ekp_forge.orchestrator import REAL_AIDER
-from ekp_forge.orchestrator_api import run_3tier_dev
+from ekp_forge.protocol.assignment import OrganizationLoader
+from ekp_forge.protocol.roles import Role
 from ekp_forge.schemas.task_schema import TaskSchema, _generate_task_id
 from ekp_forge.worker import WorkerAgent
 
 mcp = FastMCP("EKP-Forge")  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# WorkflowEngine factory (lazy-init, singleton per profile)
+# ---------------------------------------------------------------------------
+
+_ENGINE_CACHE: dict[str, WorkflowEngine] = {}
+
+
+def _get_workflow_engine(profile_name: str | None = None) -> WorkflowEngine:
+    """Get or create a WorkflowEngine for the given profile.
+
+    Args:
+        profile_name: Profile name (default: ``EKP_PROFILE`` env var or ``"simple"``).
+
+    Returns:
+        A cached WorkflowEngine instance.
+    """
+    if profile_name is None:
+        profile_name = os.environ.get("EKP_PROFILE", "simple")
+
+    cache_key = profile_name
+    if cache_key in _ENGINE_CACHE:
+        return _ENGINE_CACHE[cache_key]
+
+    # Build registry with available agents
+    # Note: agent_id is a class attribute on both ManagerAgent and WorkerAgent
+    registry = AgentRegistry()
+    registry.register(ManagerAgent(manager_id="MGR-Engine-01"))
+    registry.register(WorkerAgent())
+
+    # Load profile
+    profile = OrganizationLoader.load(profile_name)
+
+    # Create engine
+    engine = WorkflowEngine(profile, registry)
+    _ENGINE_CACHE[cache_key] = engine
+    return engine
 
 
 @mcp.tool()
@@ -70,21 +113,43 @@ def execute_strict_compile(
     model: str = "ollama/qwen2.5-coder:7b",
 ) -> dict:
     """
-    Execute strict compilation pipeline through run_3tier_dev.
+    Execute strict compilation pipeline through WorkflowEngine.
+
+    Replaced legacy ``run_3tier_dev`` with Phase 3 ``WorkflowEngine`` dispatch.
+    Creates a ``TaskSchema`` from the prompt and runs the full role pipeline:
+    REQUIREMENT_REVIEW → PLANNING → IMPLEMENTATION → VERIFICATION → INTEGRATION.
+
+    Args:
+        prompt:       Implementation goal / instruction.
+        target_pkg:   Target package name (used in task generation).
+        target_files: Files to modify.
+        model:        Model identifier (default: ollama/qwen2.5-coder:7b).
+
+    Returns:
+        Structured result dict with status and pipeline output.
     """
-    return run_3tier_dev(
-        prompt=prompt,
-        target_pkg=target_pkg,
-        target_files=target_files,
-        model=model,
-        timeout=600,
+    # Generate a task schema from the prompt
+    task = TaskSchema(
+        task_id=_generate_task_id(target_pkg),
+        manager_id="MGR-StrictCompile-01",
+        goal=prompt,
+        constraints=["Strict compilation: all checks must pass"],
+        acceptance_tests=[f"Implementation for: {prompt[:100]}"],
+        affected_modules=target_files,
     )
+
+    # Delegate to run_managed_task (uses WorkflowEngine under the hood)
+    return run_managed_task(task.model_dump())
 
 
 @mcp.tool()
 def run_managed_task(task_schema: dict) -> dict:
     """
-    Task Schema を受け取り、Manager-Worker パイプラインを実行する。
+    Task Schema を受け取り、WorkflowEngine 経由で管理パイプラインを実行する。
+
+    Role-based Protocol Architecture（フェーズ1）:
+    - REQUIREMENT_REVIEW → PLANNING → IMPLEMENTATION → VERIFICATION → INTEGRATION
+    - 使用プロファイルは ``EKP_PROFILE`` 環境変数で切替可能（デフォルト: simple）
 
     Args:
         task_schema: TaskSchema 準拠の dict
@@ -112,108 +177,128 @@ def run_managed_task(task_schema: dict) -> dict:
             "error_summary": None,
         }
 
-    # Initialize agents
-    manager = ManagerAgent(manager_id=task.manager_id)
-    worker = WorkerAgent()
+    # Get WorkflowEngine (lazy-initialized, profile from EKP_PROFILE env)
+    engine = _get_workflow_engine()
 
-    # Phase 1: Triage
-    triage_status, triage_result = manager.triage(task)
-    if triage_status == "REJECT":
+    # Phase 1: Requirement Review (Challenge Agent / Triage)
+    triage_result = engine.run(Role.REQUIREMENT_REVIEW, {"task": task})
+    if triage_result.get("status") == "rejected":
         return {
             "status": "rejected",
             "task_id": task.task_id,
             "adr_path": None,
-            "rejection_reason": triage_result,
+            "rejection_reason": triage_result.get("rejection_reason", "Rejected by RequirementReview"),
             "help_request": None,
             "error_summary": None,
         }
 
-    implementation_plan = triage_result
+    plan = triage_result.get("plan", "")
 
-    # Phase 2: Worker execution
-    worker_result = worker.execute_verification_loop(task, implementation_plan)
+    # Phase 2: Planning (generate implementation plan)
+    planning_result = engine.run(Role.PLANNING, {"task": task, "triage_result": triage_result})
+    plan = planning_result.get("plan", plan)
 
-    if worker_result["status"] == "escalated":
-        # Phase 2b: Handle escalation
-        help_req = worker_result["help_request"]
-        if help_req:
-            manager_action, manager_payload = manager.handle_help_request(help_req)
-            return {
-                "status": "escalated",
-                "task_id": task.task_id,
-                "adr_path": None,
-                "rejection_reason": None,
-                "help_request": help_req.model_dump(),
-                "error_summary": [e.model_dump() for e in worker_result["error_chunk_summary"].entries],
-                "manager_action": manager_action,
-                "manager_payload": manager_payload,
-            }
+    # Phase 3: Implementation (Worker: Aider + verification loop)
+    impl_result = engine.run(Role.IMPLEMENTATION, {"task": task, "plan": plan})
+
+    if impl_result.get("status") == "escalated":
+        help_req = impl_result.get("help_request")
+        help_req_serialized: dict | str | None = None
+        if help_req is not None:
+            help_req_serialized = help_req.model_dump() if hasattr(help_req, "model_dump") else str(help_req)
         return {
             "status": "escalated",
             "task_id": task.task_id,
             "adr_path": None,
             "rejection_reason": None,
-            "help_request": None,
-            "error_summary": [e.model_dump() for e in worker_result["error_chunk_summary"].entries],
+            "help_request": help_req_serialized,
+            "error_summary": _extract_error_summary(impl_result),
+            "manager_action": "escalated",
+            "manager_payload": str(help_req) if help_req else "",
         }
 
-    if worker_result["status"] == "failed":
+    if impl_result.get("status") == "failed":
         return {
             "status": "failed",
             "task_id": task.task_id,
             "adr_path": None,
             "rejection_reason": None,
             "help_request": None,
-            "error_summary": [e.model_dump() for e in worker_result["error_chunk_summary"].entries],
+            "error_summary": _extract_error_summary(impl_result),
         }
 
-    # Phase 3: Manager validation
-    validation_ok, feedback = manager.validate_outcome(
-        task,
-        worker_result.get("git_diff", ""),
-        worker_result["error_chunk_summary"],
-    )
+    # Phase 4: Integration (validate outcome + generate ADR)
+    integration_result = engine.run(Role.INTEGRATION, {
+        "task": task,
+        "impl_result": impl_result,
+        "error_chunk_summary": impl_result.get("error_chunk_summary"),
+        "git_diff": impl_result.get("git_diff", ""),
+    })
 
-    if not validation_ok:
-        # Could trigger rework here, but for now return as failed validation
+    if integration_result.get("status") == "failed":
         return {
             "status": "failed",
             "task_id": task.task_id,
             "adr_path": None,
-            "rejection_reason": f"Validation failed: {feedback}",
+            "rejection_reason": f"Validation failed: {integration_result.get('feedback', '')}",
             "help_request": None,
-            "error_summary": [e.model_dump() for e in worker_result["error_chunk_summary"].entries],
+            "error_summary": _extract_error_summary(impl_result),
         }
-
-    # Phase 4: ADR generation
-    adr_path = manager.generate_adr(
-        task=task,
-        error_chunk=worker_result["error_chunk_summary"],
-    )
 
     return {
         "status": "success",
         "task_id": task.task_id,
-        "adr_path": adr_path,
+        "adr_path": integration_result.get("adr_path"),
         "rejection_reason": None,
         "help_request": None,
-        "error_summary": [e.model_dump() for e in worker_result["error_chunk_summary"].entries],
+        "error_summary": _extract_error_summary(impl_result),
     }
+
+
+def _extract_error_summary(result: dict) -> list:
+    """Extract error summary entries from a worker/impl result dict."""
+    error_chunk = result.get("error_chunk_summary")
+    if error_chunk is None:
+        return []
+    if hasattr(error_chunk, "entries"):
+        return [e.model_dump() if hasattr(e, "model_dump") else e for e in error_chunk.entries]
+    if isinstance(error_chunk, dict):
+        return error_chunk.get("entries", [])
+    return []
 
 
 @mcp.tool()
 def run_epic_task(epic_schema: dict, max_workers: int = 4) -> dict:
     """
     EPIC タスクを受け取り、サブタスクに分解して並列実行する。
+
+    WorkflowEngine からエージェントインスタンスを取得し、TaskTree に渡す。
+    TaskTree 自体の WorkflowEngine 統合は Phase 2 で実施。
     """
     try:
         from ekp_forge.task_tree import TaskTree
 
         epic = TaskSchema(**epic_schema)
-        manager = ManagerAgent(manager_id=epic.manager_id)
-        worker = WorkerAgent()
+        engine = _get_workflow_engine()
 
-        # Decompose
+        # Resolve manager and worker agents from the engine's registry
+        # Note: dispatch returns BaseAgent — we cast to concrete types since
+        # TaskTree.execute_parallel() requires the full ManagerAgent/WorkerAgent API.
+        # This is safe because _get_workflow_engine() registers ManagerAgent and WorkerAgent.
+        raw_manager = engine.dispatcher.resolve_agents(Role.REQUIREMENT_REVIEW)[0]
+        raw_worker = engine.dispatcher.resolve_agents(Role.IMPLEMENTATION)[0]
+
+        from ekp_forge.manager import ManagerAgent as _MA
+        from ekp_forge.worker import WorkerAgent as _WA
+
+        assert isinstance(raw_manager, _MA), f"Expected ManagerAgent, got {type(raw_manager)}"
+        assert isinstance(raw_worker, _WA), f"Expected WorkerAgent, got {type(raw_worker)}"
+
+        manager: _MA = raw_manager
+        worker: _WA = raw_worker
+
+        # Note: ManagerAgent.decompose_epic() is a static-like method that
+        # doesn't depend on the protocol layer yet — kept as-is for backward compat
         subtasks = manager.decompose_epic(epic)
 
         # Build tree and execute

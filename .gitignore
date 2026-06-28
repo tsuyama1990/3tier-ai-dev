@@ -53,6 +53,14 @@ tests/*/generated/
 # --- Auto-generated ADR logs (created at runtime by Manager Agent) ---
 /decisions/*.md
 
+# --- Phase 4 runtime artifacts ---
+_patch_rejections.log
+._fix_temp_*
+
+# --- Test output directory (generates mypy noise) ---
+test_output/
+
 # --- Ignore root-level standalone scripts ---
 /scratch_test.py
+/_smoke_test.py
 /validate_ollama.sh

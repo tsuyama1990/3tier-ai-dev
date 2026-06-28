@@ -68,6 +68,8 @@ ignore_errors = true
 
 [dependency-groups]
 dev = [
+    "libcst>=1.8.6",
     "mypy>=2.1.0",
+    "numpy>=2.5.0",
     "ruff>=0.15.19",
 ]

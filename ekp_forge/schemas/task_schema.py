@@ -19,10 +19,10 @@ class TaskSchema(BaseModel):
 
     model_config = ConfigDict(strict=True)
 
-    task_id: str = Field(pattern=r"^T-\d{14}-[a-f0-9]{6}$")
+    task_id: str = Field(pattern=r"^T-[\w-]+$")
     parent_task_id: str | None = None
     manager_id: str
-    goal: str = Field(max_length=200, min_length=1)
+    goal: str = Field(max_length=1000, min_length=1)
     constraints: list[str] = Field(min_length=1)
     acceptance_tests: list[str]
     affected_modules: list[str] = Field(min_length=1)

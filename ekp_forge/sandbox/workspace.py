@@ -1,10 +1,13 @@
 """SandboxWorkspace – isolated working directory for Safe Factory.
 
-The workspace is created in a temporary directory (via :pyfunc:`tempfile.mkdtemp`).
-Only a whitelist of files is copied to avoid leaking sensitive configuration
-or global state. The class implements the context‑manager protocol so callers can
-use ``with SandboxWorkspace() as ws:`` and be guaranteed that the temporary
-directory is removed afterwards.
+**DEPRECATED**: Use :class:`ekp_forge.sandbox.git_worktree.GitWorktree` instead.
+
+``SandboxWorkspace`` copies files into a temporary directory, which incurs
+the full cost of ``git clone`` (∼300s). ``GitWorktree`` uses ``git worktree add``
+which completes in milliseconds by sharing the object database via symbolic links.
+
+This module is preserved for backward compatibility but is no longer used
+by the default ``production`` execution mode.
 """
 
 from __future__ import annotations

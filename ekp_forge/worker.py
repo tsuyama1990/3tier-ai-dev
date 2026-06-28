@@ -1,4 +1,14 @@
-"""Worker Agent — Tier 3: executes tasks via Aider + verification loop with escalation."""
+"""Worker Agent — Tier 3: executes tasks via Aider + verification loop with escalation.
+
+Phase 2 upgrade:
+- Accepts ``WorkerContract`` to constrain Worker scope.
+- Accepts ``FixTask`` for targeted fix instructions from the Fix Planner.
+- Uses the Verification IR pipeline (``run_verification_pipeline``) instead
+  of raw ``run_ruff`` / ``run_mypy`` / string-based error logs.
+- ``Diagnostic`` models are returned for structured escalation.
+
+All existing public methods are preserved for backward compatibility.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +22,21 @@ from pathlib import Path
 from typing import Any
 
 # Import verification & setup from orchestrator
-from ekp_forge.orchestrator import run_mypy, run_ruff, setup_ruff_mypy
+from ekp_forge.orchestrator import setup_ruff_mypy
+from ekp_forge.agents.base import BaseAgent, ExecutionTier
+from ekp_forge.protocol.capability import Capability
+from ekp_forge.protocol.roles import Role
+from ekp_forge.sandbox.introspection import IntrospectionTool
+from ekp_forge.sandbox.verification_ir import (
+    run_verification_pipeline,
+)
+from ekp_forge.schemas.contract import (
+    Diagnostic,
+    DiagnosticCategory,
+    DiagnosticSeverity,
+    FixTask,
+    WorkerContract,
+)
 from ekp_forge.schemas.task_schema import (
     ErrorChunkEntry,
     ErrorChunkSummary,
@@ -35,8 +59,30 @@ _PROJECT_REFLECTIONS_DIR = Path(".ai-knowledge") / "reflections"
 # ---------------------------------------------------------------------------
 
 
-class WorkerAgent:
-    """Executes implementation plans through Aider + verification loop."""
+class WorkerAgent(BaseAgent):
+    """Executes implementation plans through Aider + verification loop.
+
+    Implements ``BaseAgent`` for protocol compatibility. The ``execute()``
+    method dispatches to existing methods based on the ``_role`` key in
+    the context dict.
+
+    Phase 2 additions:
+    - ``worker_contract`` in context: constrains scope via ``WorkerContract``.
+    - ``fix_task`` in context: a ``FixTask`` from the Fix Planner for targeted
+      single-priority fixes.
+
+    Phase 3 additions:
+    - Declares ``capabilities`` including CODING, VERIFICATION, and INTROSPECTION.
+    - ``execution_tier`` is ``"local"`` by default (7B model via Ollama).
+    """
+
+    agent_id: str = "worker"
+    capabilities: list[Capability] = [
+        Capability.CODING,
+        Capability.VERIFICATION,
+        Capability.INTROSPECTION,  # Phase 3: dynamic dir()/help() introspection
+    ]
+    execution_tier: ExecutionTier = "local"
 
     def __init__(
         self,
@@ -48,9 +94,361 @@ class WorkerAgent:
         self.max_retries = max_retries
         self.escalation_confidence_threshold = escalation_confidence_threshold
         self._reflection_log: ReflectionLog | None = None
+        # Phase 3: cumulative introspection budget (max 30s total)
+        self._introspection_budget_remaining: float = 30.0
+
+    # -------------------------------------------------------------------
+    # BaseAgent Protocol (Role-based Protocol Architecture)
+    # -------------------------------------------------------------------
+
+    def execute(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Dispatch to the appropriate method based on the role context.
+
+        This is the ``BaseAgent`` interface implementation. It reads the
+        ``_role`` key from context to determine which internal method to
+        call. Exceptions propagate transparently — no try/except here.
+
+        Supported roles:
+        - ``IMPLEMENTATION``: calls ``execute_verification_loop()``
+        - ``VERIFICATION``:   calls ``execute_verification()`` (IR generation)
+
+        Phase 2 context keys:
+        - ``worker_contract``: A ``WorkerContract`` constraining scope.
+        - ``fix_task``: A ``FixTask`` for targeted single-priority fixes.
+        """
+        role: Role | None = context.get("_role")
+        task: Any = context.get("task")
+        plan: str = context.get("plan", "")
+        # Phase 4.5: Read execution mode from context (injected by WorkflowEngine)
+        execution_mode: str = context.get("execution_mode", "production")
+
+        if role == Role.IMPLEMENTATION:
+            if task is None:
+                raise ValueError("WorkerAgent.execute(): 'task' required in context")
+            plan_text = plan or context.get("implementation_plan", "")
+            rag_context = context.get("_rag_context", "")
+            worker_contract: WorkerContract | None = context.get("worker_contract")
+            fix_task: FixTask | None = context.get("fix_task")
+
+            if execution_mode == "research":
+                # Phase 4.5: Research mode — no sandbox, no git ops, direct local execution
+                result = self._execute_research_mode(
+                    task,
+                    plan_text,
+                    rag_context,
+                    worker_contract=worker_contract,
+                    fix_task=fix_task,
+                )
+            else:
+                # Production mode — use git worktree isolated execution
+                result = self._run_with_worktree(
+                    task,
+                    plan_text,
+                    rag_context,
+                    worker_contract=worker_contract,
+                    fix_task=fix_task,
+                )
+            return dict(result)
+
+        if role == Role.VERIFICATION:
+            # Verification role: run the IR pipeline and return structured diagnostics
+            if task is None:
+                raise ValueError("WorkerAgent.execute(): 'task' required in context for VERIFICATION")
+            result = self.execute_verification(task)
+            return dict(result)
+
+        # Role not handled by WorkerAgent
+        return {"status": "skipped", "reason": f"Role {role} not handled by WorkerAgent"}
 
     # -------------------------------------------------------------------
     # Public API
+    # -------------------------------------------------------------------
+
+    def execute_verification(
+        self,
+        task: Any,
+    ) -> dict[str, Any]:
+        """Execute the Verification role: run the IR pipeline and return structured diagnostics.
+
+        This method is invoked when ``_role == Role.VERIFICATION``. It runs
+        the full verification pipeline (auto-fix → ruff → mypy → pytest)
+        and returns structured ``Diagnostic`` instances instead of raw strings.
+
+        Args:
+            task: The ``TaskSchema`` instance.
+
+        Returns:
+            Dict with keys:
+            - ``"status"``: ``"success"`` | ``"failed"``
+            - ``"diagnostics"``: list[Diagnostic]
+            - ``"diagnostic_count"``: int
+        """
+        from ekp_forge.sandbox.scoped_lint import _changed_files
+
+        changed_file_paths = _changed_files()
+        changed_files = [str(f) for f in changed_file_paths] if changed_file_paths else None
+
+        # Run the verification pipeline: auto-fix → check → parse
+        diagnostics = run_verification_pipeline(
+            changed_files=changed_files,
+            run_pytest=True,
+        )
+
+        if not diagnostics:
+            return {
+                "status": "success",
+                "diagnostics": [],
+                "diagnostic_count": 0,
+            }
+
+        return {
+            "status": "failed",
+            "diagnostics": [d.model_dump() for d in diagnostics],
+            "diagnostic_count": len(diagnostics),
+        }
+
+    # -------------------------------------------------------------------
+    # Phase 4.5: Shared helpers for all execution modes
+    # -------------------------------------------------------------------
+
+    def _build_aider_cmd(
+        self,
+        task: Any,
+        fix_task: FixTask | None = None,
+    ) -> list[str]:
+        """Build a standard Aider command with common arguments.
+
+        All execution modes share this command template:
+        - ``--yes`` (non-interactive)
+        - ``--no-git`` (prevent Aider from managing git — Worker retains control)
+        - ``--edit-format diff``
+        - ``--read`` for any ``.ai-knowledge/*.md`` files
+        - ``--message-file`` for the plan/error instructions
+        - Target files from ``fix_task.contract.target_files`` (if fix_task)
+          or ``task.affected_modules``
+
+        Args:
+            task: The TaskSchema instance.
+            fix_task: Optional FixTask for targeted fix scope.
+
+        Returns:
+            Aider command as a list of strings.
+        """
+        temp_msg = ".aider.msg.temp"
+        cmd = [
+            "aider",
+            "--yes",
+            "--no-git",  # CRITICAL: prevent Aider git operations in all modes
+            "--edit-format",
+            "diff",
+        ]
+        if self.model:
+            cmd.extend(["--model", self.model])
+        if os.path.exists(".ai-knowledge"):
+            for f in sorted(os.listdir(".ai-knowledge")):
+                fpath = os.path.join(".ai-knowledge", f)
+                if os.path.isfile(fpath) and f.endswith(".md"):
+                    cmd.extend(["--read", fpath])
+        cmd.extend(["--message-file", temp_msg])
+
+        if fix_task is not None:
+            cmd.extend(fix_task.contract.target_files)
+        else:
+            cmd.extend(task.affected_modules)
+        return cmd
+
+    def _build_scope_block(self, worker_contract: WorkerContract) -> str:
+        """Build the scope-constraint block for a WorkerContract."""
+        return (
+            f"[CONTRACT: {worker_contract.contract_id}]\n"
+            f"Objective: {worker_contract.objective}\n"
+            f"Target files: {', '.join(worker_contract.target_files)}\n"
+            f"Editable symbols: {', '.join(worker_contract.editable_symbols) or '(any)'}\n"
+            f"Forbidden symbols: {', '.join(worker_contract.forbidden_symbols) or '(none)'}\n"
+            f"Design freedom: {worker_contract.local_design_freedom}\n\n"
+            f"You are STRICTLY FORBIDDEN from modifying files outside the target_files list. "
+            f"You MUST NOT change or remove any function/class/method listed in forbidden_symbols.\n\n"
+        )
+
+    # -------------------------------------------------------------------
+    # Phase 4.5: Shared Aider + Verification Retry Loop
+    # -------------------------------------------------------------------
+
+    def _run_aider_verification_loop(
+        self,
+        task: Any,
+        plan: str,
+        aider_cmd: list[str],
+        error_chunk: ErrorChunkSummary,
+        *,
+        worker_contract: WorkerContract | None = None,
+        fix_task: FixTask | None = None,
+        workspace: Path | None = None,
+    ) -> dict[str, Any]:
+        """Shared Aider + Verification retry loop for all execution modes.
+
+        This method contains the common retry logic that is identical across
+        research, production (worktree), and legacy (sandbox) modes:
+
+        1. Write plan → run Aider → validate imports → verify → repeat.
+        2. Escalation policy with introspection fallback.
+        3. Success / failure / escalation return dicts.
+
+        Args:
+            task:       The TaskSchema instance.
+            plan:       Initial plan text (may be updated across retries).
+            aider_cmd:  Pre-built Aider command (see ``_build_aider_cmd``).
+            error_chunk: Pre-allocated ErrorChunkSummary for this run.
+            worker_contract: Optional WorkerContract for scope constraints.
+            fix_task:   Optional FixTask for targeted fixes.
+            workspace:  Optional workspace path for verification pipeline.
+                        ``None`` = research mode (local files).
+
+        Returns:
+            Standard result dict (same schema as ``execute_verification_loop``).
+        """
+        from ekp_forge.sandbox.verification_ir import run_verification_pipeline
+
+        prev_error_hash: str | None = None
+        current_instructions = plan
+
+        # Prepend WorkerContract scope constraints
+        if worker_contract is not None and fix_task is None:
+            current_instructions = self._build_scope_block(worker_contract) + current_instructions
+
+        try:
+            for attempt in range(1, self.max_retries + 1):
+                self._write_temp_message(current_instructions)
+
+                # Step 1: Aider execution
+                aider_ok, aider_msg = self._run_aider(aider_cmd, attempt)
+                if not aider_ok:
+                    error_chunk.add_entry(
+                        ErrorChunkEntry(
+                            attempt=attempt,
+                            error_type="AiderExecutionError",
+                            module=task.affected_modules[0] if task.affected_modules else "*",
+                            action_taken=aider_msg,
+                        )
+                    )
+                    break
+
+                # Step 2: AST gatekeeper
+                import_ok, import_err = self._validate_imports()
+                if not import_ok:
+                    error_chunk.add_entry(
+                        ErrorChunkEntry(
+                            attempt=attempt, error_type="ImportViolation", module="*", action_taken=import_err
+                        )
+                    )
+                    continue
+
+                from ekp_forge.sandbox.scoped_lint import _changed_files
+
+                changed_files = [str(f) for f in _changed_files()] if _changed_files() else None
+
+                # Step 3: Verification IR pipeline
+                diagnostics = run_verification_pipeline(
+                    changed_files=changed_files,
+                    run_pytest=True,
+                    workspace=workspace,
+                )
+
+                # Record diagnostics
+                for d in diagnostics:
+                    error_chunk.add_entry(
+                        ErrorChunkEntry(
+                            attempt=attempt,
+                            error_type=f"{d.tool.upper()}{d.code}",
+                            module=d.file,
+                            action_taken=f"{d.category.value}: {d.message[:200]}",
+                        )
+                    )
+
+                # Check for remaining issues
+                remaining = [
+                    d
+                    for d in diagnostics
+                    if d.category not in {DiagnosticCategory.FORMATTING, DiagnosticCategory.UNUSED_IMPORT}
+                ]
+                if not remaining:
+                    git_diff = self._get_git_diff()
+                    self._update_reflection_log(task, error_chunk, success=True)
+                    return {
+                        "status": "success",
+                        "retries": attempt,
+                        "error_chunk_summary": error_chunk,
+                        "help_request": None,
+                        "git_diff": git_diff,
+                        "diagnostics": [d.model_dump() for d in diagnostics],
+                    }
+
+                # Build compressed error feedback
+                error_lines = [f"  [{d.tool}] {d.file}:{d.line}: {d.message[:150]}" for d in diagnostics[:15]]
+                if len(diagnostics) > 15:
+                    error_lines.append(f"  ... and {len(diagnostics) - 15} more issues")
+                combined_error_log = "\n".join(error_lines)[:1500]
+
+                # Introspection
+                introspection_context: str | None = None
+                if (
+                    "AttributeError" in combined_error_log
+                    or "ModuleNotFoundError" in combined_error_log
+                    or "has no attribute" in combined_error_log.lower()
+                ):
+                    introspection_context = self._try_introspection(combined_error_log)
+
+                # Escalation policy
+                if not introspection_context:
+                    esc_result = self._check_escalation_policy(
+                        attempt, error_chunk, combined_error_log, prev_error_hash, task
+                    )
+                    if esc_result is not None:
+                        git_diff = self._get_git_diff()
+                        self._git_rollback()
+                        return {
+                            "status": "escalated",
+                            "retries": attempt,
+                            "error_chunk_summary": error_chunk,
+                            "help_request": esc_result,
+                            "git_diff": git_diff,
+                            "diagnostics": [d.model_dump() for d in diagnostics],
+                        }
+
+                # Build next iteration instructions
+                contract_block = (
+                    f"[CONTRACT: {worker_contract.contract_id}]\n"
+                    f"Target files: {', '.join(worker_contract.target_files)}\n"
+                    f"You are STRICTLY FORBIDDEN from modifying anything outside the scope above.\n\n"
+                    if worker_contract is not None
+                    else ""
+                )
+                introspection_block = (
+                    f"\n[Introspection Result]\n{introspection_context}\n\n" if introspection_context else ""
+                )
+                current_instructions = (
+                    f"{contract_block}{introspection_block}"
+                    f"The verification pipeline found remaining issues. Fix only the errors listed below.\n\n"
+                    f"--- Remaining Issues ({len(remaining)} unresolved) ---\n{combined_error_log}"
+                )
+                prev_error_hash = _error_fingerprint(combined_error_log)
+        finally:
+            self._cleanup_temp_message()
+
+        # Loop exhausted
+        self._git_rollback()
+        self._update_reflection_log(task, error_chunk, success=False)
+        return {
+            "status": "failed",
+            "retries": self.max_retries,
+            "error_chunk_summary": error_chunk,
+            "help_request": None,
+            "git_diff": "",
+            "diagnostics": None,
+        }
+
+    # -------------------------------------------------------------------
+    # Legacy: execute_verification_loop (DEPRECATED)
     # -------------------------------------------------------------------
 
     def execute_verification_loop(
@@ -58,30 +456,49 @@ class WorkerAgent:
         task: Any,  # TaskSchema (avoid import-time circular issues with typing)
         plan: str,
         _rag_context: str = "",
+        *,
+        worker_contract: WorkerContract | None = None,
+        fix_task: FixTask | None = None,
     ) -> dict[str, Any]:
         """
-        Run Aider + Quality Checks (pytest, ruff, mypy) in a loop with escalation policy.
+        **DEPRECATED**: Use ``WorkerAgent.execute()`` with ``execution_mode``
+        context instead.
 
-        Returns:
-            {
-                "status": "success" | "failed" | "escalated",
-                "retries": int,
-                "error_chunk_summary": ErrorChunkSummary,
-                "help_request": HelpRequestSchema | None,
-                "git_diff": str,   # present on "success"
-                "patch_report": dict | None,
-                "adversarial_passed": bool | None,
-            }
+        This legacy method uses ``SandboxWorkspace`` + ``clone_into()`` which
+        performs a full ``git clone --depth 1`` on every invocation (~300s
+        overhead).
+
+        **Replacement**: Call ``execute()`` with::
+
+            worker.execute({
+                "_role": Role.IMPLEMENTATION,
+                "task": task,
+                "plan": plan,
+                "execution_mode": "production",
+            })
+
+        The new production path uses ``GitWorktree`` (millisecond-fast
+        isolated workspace) instead of ``SandboxWorkspace`` + ``clone_into``.
+
+        This method is preserved for backward compatibility and delegates to
+        the deprecated ``SandboxWorkspace`` implementation.
         """
+        import warnings
+
+        warnings.warn(
+            "execute_verification_loop() is deprecated. Use execute() with execution_mode context instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         from ekp_forge.sandbox.cloner import clone_into
         from ekp_forge.sandbox.workspace import SandboxWorkspace
-        from ekp_forge.schemas.task_schema import TaskSchema  # local import
+        from ekp_forge.schemas.task_schema import TaskSchema
 
         assert isinstance(task, TaskSchema), "task must be a TaskSchema instance"
 
         error_chunk = ErrorChunkSummary(task_id=task.task_id)
 
-        # Step 0: Ensure sandbox workspace is set up
         with SandboxWorkspace() as ws_path:
             clone_ok, clone_err = clone_into(ws_path)
             if not clone_ok:
@@ -96,23 +513,15 @@ class WorkerAgent:
             original_cwd = os.getcwd()
             os.chdir(ws_path / "repo")
             try:
-                # Step 1: Ensure strict checkers are set up
                 try:
                     setup_ruff_mypy()
                 except Exception as e:
-                    print(f"Failed to run setup_ruff_mypy: {e}", file=sys.stderr)  # noqa: T201
+                    print(f"Failed to run setup_ruff_mypy: {e}", file=sys.stderr)
 
                 prev_error_hash: str | None = None
 
-                # Build stable Aider command arguments
                 temp_msg = ".aider.msg.temp"
-                aider_cmd = [
-                    "aider",
-                    "--yes",
-                    "--no-git",
-                    "--edit-format",
-                    "diff",
-                ]
+                aider_cmd = ["aider", "--yes", "--no-git", "--edit-format", "diff"]
                 if self.model:
                     aider_cmd.extend(["--model", self.model])
                 if os.path.exists(".ai-knowledge"):
@@ -121,16 +530,29 @@ class WorkerAgent:
                         if os.path.isfile(fpath) and f.endswith(".md"):
                             aider_cmd.extend(["--read", fpath])
                 aider_cmd.extend(["--message-file", temp_msg])
-                aider_cmd.extend(task.affected_modules)
+                if fix_task is not None:
+                    aider_cmd.extend(fix_task.contract.target_files)
+                else:
+                    aider_cmd.extend(task.affected_modules)
 
                 current_instructions = plan
+                if worker_contract is not None and fix_task is None:
+                    scope_block = (
+                        f"[CONTRACT: {worker_contract.contract_id}]\n"
+                        f"Objective: {worker_contract.objective}\n"
+                        f"Target files: {', '.join(worker_contract.target_files)}\n"
+                        f"Editable symbols: {', '.join(worker_contract.editable_symbols) or '(any)'}\n"
+                        f"Forbidden symbols: {', '.join(worker_contract.forbidden_symbols) or '(none)'}\n"
+                        f"Design freedom: {worker_contract.local_design_freedom}\n\n"
+                        f"You are STRICTLY FORBIDDEN from modifying files outside the target_files list. "
+                        f"You MUST NOT change or remove any function/class/method listed in forbidden_symbols.\n\n"
+                    )
+                    current_instructions = scope_block + current_instructions
 
                 try:
                     for attempt in range(1, self.max_retries + 1):
-                        # Write current plan/errors to temp file
                         self._write_temp_message(current_instructions)
 
-                        # --- Step 1: Aider execution ---
                         aider_ok, aider_msg = self._run_aider(aider_cmd, attempt)
                         if not aider_ok:
                             error_chunk.add_entry(
@@ -143,135 +565,100 @@ class WorkerAgent:
                             )
                             break
 
-                        # --- Step 2: AST gatekeeper (validate imports) ---
                         import_ok, import_err = self._validate_imports()
                         if not import_ok:
                             error_chunk.add_entry(
                                 ErrorChunkEntry(
-                                    attempt=attempt,
-                                    error_type="ImportViolation",
-                                    module="*",
-                                    action_taken=import_err,
+                                    attempt=attempt, error_type="ImportViolation", module="*", action_taken=import_err
                                 )
                             )
                             continue
 
                         from ekp_forge.sandbox.scoped_lint import _changed_files
 
-                        changed_file_paths = _changed_files()
-                        changed_files = [str(f) for f in changed_file_paths] if changed_file_paths else None
+                        changed_files = [str(f) for f in _changed_files()] if _changed_files() else None
 
-                        # --- Step 3: Ruff lint execution ---
-                        ruff_ok, ruff_output = run_ruff(changed_files)
-                        if not ruff_ok:
+                        diagnostics = run_verification_pipeline(
+                            changed_files=changed_files,
+                            run_pytest=True,
+                            workspace=ws_path / "repo",
+                        )
+
+                        for d in diagnostics:
                             error_chunk.add_entry(
                                 ErrorChunkEntry(
                                     attempt=attempt,
-                                    error_type="RuffLintError",
-                                    module=task.affected_modules[0] if task.affected_modules else "*",
-                                    action_taken=f"Ruff check failed: {ruff_output[:200]}",
+                                    error_type=f"{d.tool.upper()}{d.code}",
+                                    module=d.file,
+                                    action_taken=f"{d.category.value}: {d.message[:200]}",
                                 )
                             )
-                            print(
-                                f"\n--- ATTEMPT {attempt} RUFF LINT FAILURE ---\n{ruff_output}\n----------------------------------\n",
-                                file=sys.stderr,
-                            )  # noqa: T201
 
-                        # --- Step 4: Mypy type execution ---
-                        mypy_ok, mypy_output = run_mypy(changed_files)
-                        if not mypy_ok:
-                            error_chunk.add_entry(
-                                ErrorChunkEntry(
-                                    attempt=attempt,
-                                    error_type="MypyTypeError",
-                                    module=task.affected_modules[0] if task.affected_modules else "*",
-                                    action_taken=f"Mypy check failed: {mypy_output[:200]}",
-                                )
-                            )
-                            print(
-                                f"\n--- ATTEMPT {attempt} MYPY TYPE FAILURE ---\n{mypy_output}\n----------------------------------\n",
-                                file=sys.stderr,
-                            )  # noqa: T201
-
-                        # --- Step 5: pytest execution ---
-                        pytest_ok, pytest_output = self._run_pytest()
-                        if not pytest_ok:
-                            error_chunk.add_entry(
-                                ErrorChunkEntry(
-                                    attempt=attempt,
-                                    error_type=self._classify_error(pytest_output),
-                                    module=self._error_module(pytest_output, task.affected_modules),
-                                    action_taken="Pytest check failed, attempting repair",
-                                )
-                            )
-                            print(
-                                f"\n--- ATTEMPT {attempt} PYTEST FAILURE ---\n{pytest_output}\n----------------------------------\n",
-                                file=sys.stderr,
-                            )  # noqa: T201
-
-                        # Aggregate results
-                        all_ok = import_ok and ruff_ok and mypy_ok and pytest_ok
-                        if all_ok:
-                            # Success!
+                        remaining = [
+                            d
+                            for d in diagnostics
+                            if d.category not in {DiagnosticCategory.FORMATTING, DiagnosticCategory.UNUSED_IMPORT}
+                        ]
+                        if not remaining:
                             git_diff = self._get_git_diff()
                             self._update_reflection_log(task, error_chunk, success=True)
-
                             return {
                                 "status": "success",
                                 "retries": attempt,
                                 "error_chunk_summary": error_chunk,
                                 "help_request": None,
                                 "git_diff": git_diff,
+                                "diagnostics": [d.model_dump() for d in diagnostics],
                             }
 
-                        # Formulate combined error feedback log for Aider
-                        error_log_parts = []
-                        if not import_ok:
-                            error_log_parts.append(f"--- Import Validation Failures ---\n{import_err}")
-                        if not ruff_ok:
-                            error_log_parts.append(
-                                f"--- Ruff Lint Failures ---\n{self._compress_error_log(ruff_output)}"
-                            )
-                        if not mypy_ok:
-                            error_log_parts.append(
-                                f"--- Mypy Type Failures ---\n{self._compress_error_log(mypy_output)}"
-                            )
-                        if not pytest_ok:
-                            error_log_parts.append(
-                                f"--- Pytest Failures ---\n{self._compress_error_log(pytest_output)}"
-                            )
+                        error_lines = [f"  [{d.tool}] {d.file}:{d.line}: {d.message[:150]}" for d in diagnostics[:15]]
+                        if len(diagnostics) > 15:
+                            error_lines.append(f"  ... and {len(diagnostics) - 15} more issues")
+                        combined_error_log = "\n".join(error_lines)[:1500]
 
-                        combined_error_log = "\n\n".join(error_log_parts)
+                        introspection_context: str | None = None
+                        if (
+                            "AttributeError" in combined_error_log
+                            or "ModuleNotFoundError" in combined_error_log
+                            or "has no attribute" in combined_error_log.lower()
+                        ):
+                            introspection_context = self._try_introspection(combined_error_log)
 
-                        # Escalation Policy checks
-                        esc_result = self._check_escalation_policy(
-                            attempt, error_chunk, combined_error_log, prev_error_hash, task
+                        if not introspection_context:
+                            esc_result = self._check_escalation_policy(
+                                attempt, error_chunk, combined_error_log, prev_error_hash, task
+                            )
+                            if esc_result is not None:
+                                git_diff = self._get_git_diff()
+                                self._git_rollback()
+                                return {
+                                    "status": "escalated",
+                                    "retries": attempt,
+                                    "error_chunk_summary": error_chunk,
+                                    "help_request": esc_result,
+                                    "git_diff": git_diff,
+                                    "diagnostics": [d.model_dump() for d in diagnostics],
+                                }
+
+                        contract_block = ""
+                        if worker_contract is not None:
+                            contract_block = (
+                                f"[CONTRACT: {worker_contract.contract_id}]\n"
+                                f"Target files: {', '.join(worker_contract.target_files)}\n"
+                                f"You are STRICTLY FORBIDDEN from modifying anything outside the scope above.\n\n"
+                            )
+                        introspection_block = (
+                            f"\n[Introspection Result]\n{introspection_context}\n\n" if introspection_context else ""
                         )
-                        if esc_result is not None:
-                            # Escalation triggered
-                            git_diff = self._get_git_diff()
-                            self._git_rollback()
-                            return {
-                                "status": "escalated",
-                                "retries": attempt,
-                                "error_chunk_summary": error_chunk,
-                                "help_request": esc_result,
-                                "git_diff": git_diff,
-                            }
-
-                        # Update prompt instructions with error details for next attempt
                         current_instructions = (
-                            f"The implementation verification failed. Please fix the code to make all checks (pytest, ruff lint, and mypy type checks) pass.\n"
-                            f"Note: If a constraint or constructor signature documented in `.ai-knowledge/` conflicts with the empirical runtime traceback (e.g. causes a TypeError or AttributeError), the runtime behavior takes absolute precedence. Real-world execution is the ground truth. Correct the code to match the actual Python behavior even if it violates the documented rule in `.ai-knowledge/`.\n\n"
-                            f"--- Failure Outputs ---\n{combined_error_log}"
+                            f"{contract_block}{introspection_block}"
+                            f"The verification pipeline found remaining issues. Fix only the errors listed below.\n\n"
+                            f"--- Remaining Issues ({len(remaining)} unresolved) ---\n{combined_error_log}"
                         )
-
                         prev_error_hash = _error_fingerprint(combined_error_log)
-
                 finally:
                     self._cleanup_temp_message()
 
-                # --- Loop exhausted without success ---
                 self._git_rollback()
                 self._update_reflection_log(task, error_chunk, success=False)
                 return {
@@ -280,7 +667,97 @@ class WorkerAgent:
                     "error_chunk_summary": error_chunk,
                     "help_request": None,
                     "git_diff": "",
+                    "diagnostics": None,
                 }
+            finally:
+                os.chdir(original_cwd)
+
+    # -------------------------------------------------------------------
+    # Phase 4.5: Research Mode — Direct Local Execution (no sandbox, no git ops)
+    # -------------------------------------------------------------------
+
+    def _execute_research_mode(
+        self,
+        task: Any,
+        plan: str,
+        _rag_context: str = "",
+        *,
+        worker_contract: WorkerContract | None = None,
+        fix_task: FixTask | None = None,
+    ) -> dict[str, Any]:
+        """Research mode — Aider + verification directly on local workspace.
+
+        - No SandboxWorkspace (no temp directory, no file copy).
+        - No clone_into() (no git clone — works on local files directly).
+        - Aider runs with ``--file`` restriction to prevent uncontrolled edits.
+        - Delegates the retry loop to ``_run_aider_verification_loop()``.
+        """
+        from ekp_forge.schemas.task_schema import TaskSchema
+
+        assert isinstance(task, TaskSchema), "task must be a TaskSchema instance"
+        error_chunk = ErrorChunkSummary(task_id=task.task_id)
+
+        try:
+            setup_ruff_mypy()
+        except Exception as e:
+            print(f"Failed to run setup_ruff_mypy: {e}", file=sys.stderr)
+
+        aider_cmd = self._build_aider_cmd(task, fix_task)
+        return self._run_aider_verification_loop(
+            task,
+            plan,
+            aider_cmd,
+            error_chunk,
+            worker_contract=worker_contract,
+            fix_task=fix_task,
+            workspace=None,  # research mode = local files, no chdir
+        )
+
+    # -------------------------------------------------------------------
+    # Phase 4.5: Production Mode — Git Worktree Isolated Execution
+    # -------------------------------------------------------------------
+
+    def _run_with_worktree(
+        self,
+        task: Any,
+        plan: str,
+        _rag_context: str = "",
+        *,
+        worker_contract: WorkerContract | None = None,
+        fix_task: FixTask | None = None,
+    ) -> dict[str, Any]:
+        """Production mode — Aider + verification inside a ``git worktree``.
+
+        - Creates a ``GitWorktree`` in **milliseconds** (no file copy).
+        - Aider always runs with ``--no-git`` (Worker retains git control).
+        - Worktree is removed on both success and failure (``try/finally``).
+        - Delegates the retry loop to ``_run_aider_verification_loop()``.
+        """
+        from ekp_forge.sandbox.git_worktree import GitWorktree
+        from ekp_forge.schemas.task_schema import TaskSchema
+
+        assert isinstance(task, TaskSchema), "task must be a TaskSchema instance"
+        error_chunk = ErrorChunkSummary(task_id=task.task_id)
+
+        with GitWorktree() as worktree_path:
+            original_cwd = os.getcwd()
+            os.chdir(worktree_path)
+            try:
+                try:
+                    setup_ruff_mypy()
+                except Exception as e:
+                    print(f"Failed to run setup_ruff_mypy: {e}", file=sys.stderr)
+
+                aider_cmd = self._build_aider_cmd(task, fix_task)
+                return self._run_aider_verification_loop(
+                    task,
+                    plan,
+                    aider_cmd,
+                    error_chunk,
+                    worker_contract=worker_contract,
+                    fix_task=fix_task,
+                    workspace=worktree_path,
+                )
             finally:
                 os.chdir(original_cwd)
 
@@ -341,6 +818,8 @@ class WorkerAgent:
             if ".venv" in py_file.parts:
                 continue
             if "ekp_forge" in py_file.parts:
+                continue
+            if "test_output" in py_file.parts:
                 continue
             if "dsc" in py_file.parts:
                 continue
@@ -471,6 +950,96 @@ class WorkerAgent:
             )
         except Exception:
             pass
+
+    # -------------------------------------------------------------------
+    # Phase 3: Introspection — try before escalating
+    # -------------------------------------------------------------------
+
+    def _try_introspection(self, error_text: str) -> str | None:
+        """Attempt to resolve AttributeError/ModuleNotFoundError via introspection.
+
+        Parses the error text to extract module/attribute names, then uses
+        ``IntrospectionTool`` to inspect the actual object in a sandboxed
+        subprocess.
+
+        Returns:
+            Formatted introspection result string for prompt injection,
+            or ``None`` if introspection couldn't resolve or budget is exhausted.
+        """
+        # Check cumulative budget first
+        if self._introspection_budget_remaining <= 0:
+            return None
+
+        # Extract module and attribute names from error text
+        module_name = self._extract_module_from_error(error_text)
+        if not module_name:
+            return None
+
+        # Deduct from budget (each call costs up to 10s timeout)
+        self._introspection_budget_remaining -= 10.0
+
+        tool = IntrospectionTool(workspace=Path.cwd())
+
+        attr_name = self._extract_attribute_from_error(error_text)
+        if attr_name:
+            result = tool.resolve_attribute_error(module_name, attr_name)
+        else:
+            result = tool.inspect_module(module_name)
+
+        if result.error and not result.attributes:
+            # Introspection also failed → return None (will escalate instead)
+            return None
+
+        return IntrospectionTool.format_for_prompt(result)
+
+    @staticmethod
+    def _extract_module_from_error(error_text: str) -> str | None:
+        """Extract module name from an error message.
+
+        Handles patterns like:
+        - ``AttributeError: module 'X' has no attribute 'Y'``
+        - ``ModuleNotFoundError: No module named 'X'``
+        - ``AttributeError: 'X' object has no attribute 'Y'``
+
+        Args:
+            error_text: The error message text.
+
+        Returns:
+            The extracted module name, or ``None`` if not found.
+        """
+        # Pattern 1: module 'X' has no attribute 'Y'
+        m = re.search(r"module\s+'([^']+)'", error_text)
+        if m:
+            return m.group(1)
+
+        # Pattern 2: No module named 'X'
+        m = re.search(r"No module named '([^']+)'", error_text)
+        if m:
+            return m.group(1)
+
+        # Pattern 3: 'X' object has no attribute 'Y'
+        m = re.search(r"'([^']+)' object has no attribute", error_text)
+        if m:
+            return m.group(1)
+
+        return None
+
+    @staticmethod
+    def _extract_attribute_from_error(error_text: str) -> str | None:
+        """Extract attribute name from an error message.
+
+        Handles pattern: ``has no attribute 'Y'``
+
+        Args:
+            error_text: The error message text.
+
+        Returns:
+            The extracted attribute name, or ``None`` if not found.
+        """
+        m = re.search(r"has no attribute '([^']+)'", error_text)
+        if m:
+            return m.group(1)
+        return None
 
     # -------------------------------------------------------------------
     # Escalation Policy

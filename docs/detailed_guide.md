@@ -8,7 +8,12 @@
 
 ## 1. MCP (Model Context Protocol) の設定方法
 
-EKP-Forge は MCP サーバーとして [`ekp_forge/mcp_server.py`](../ekp_forge/mcp_server.py) を提供しており、Aider や Claude Desktop などの AI エージェントから呼び出すことが可能です。
+EKP-Forge は **2つのMCPサーバー** を提供しています。どちらも stdio トランスポート（VSCodeが自動起動）です。
+
+| MCPサーバー | スクリプト | モデル | 用途 |
+|------------|-----------|--------|------|
+| `aider-orchestrator` | [`run-mcp.sh`](../run-mcp.sh) | Ollama 7B | Aider直接実行 |
+| `ekp-forge-manager` | [`run-mcp-ekp.sh`](../run-mcp-ekp.sh) | DeepSeek V4 Flash(Mgr) + Ollama 7B(Worker) | 3-Tier管理パイプライン |
 
 ### 1.1. 設定ファイル (`mcp_config.json`)
 MCPサーバーを認識させるため、プロジェクトルートに [`mcp_config.json`](../mcp_config.json) を配置します。
@@ -22,28 +27,35 @@ MCPサーバーを認識させるため、プロジェクトルートに [`mcp_c
       "env": {
         "OLLAMA_HOST": "http://127.0.0.1:11434"
       }
+    },
+    "ekp-forge-manager": {
+      "command": "/home/tomo/project/000_devenv/ekp-forge/run-mcp-ekp.sh",
+      "args": [],
+      "env": {
+        "OLLAMA_HOST": "http://127.0.0.1:11434"
+      }
     }
   }
 }
 ```
 
-### 1.2. ラッパースクリプト (`run-mcp.sh`)
-本スクリプトは、MCP経由でのEKP-Forgeオーケストレーション起動を安全に行うためのラッパーです。`aider-mcp`（Aider MCPブリッジ）を使用して起動し、`OPENROUTER_API_KEY` を `~/.zshrc` から動的に解決します。
+### 1.2. ラッパースクリプト
 
+#### `run-mcp.sh`（aider-orchestrator用）
+`aider-mcp`（Aider MCPブリッジ）を使用。`OPENROUTER_API_KEY` を `~/.zshrc` から動的に解決。
+
+#### `run-mcp-ekp.sh`（ekp-forge-manager用）
+[`ekp_forge/mcp_server.py`](../ekp_forge/mcp_server.py) を起動。`DEEPSEEK_API_KEY` と `OPENROUTER_API_KEY` を `~/.zshrc` から解決。
+FastMCP（Python MCP SDK v1.28.0+）を使用した stdio サーバー。
+
+#### Ollama自動起動
+両スクリプトとも、起動時にOllamaの稼働状態をチェックし、停止中であれば自動起動します：
 ```bash
-#!/bin/bash
-# run-mcp.sh
-# 1. zshrc から OPENROUTER_API_KEY を抽出
-source ~/.zshrc 2>/dev/null || true
-export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
-
-# 2. 現在のリポジトリパスを動的に取得
-CURRENT_REPO_PATH=$(pwd)
-
-# 3. aider-mcp 経由で起動（ekp_forge/orchestrator.py を Aider パスとして指定）
-exec /home/tomo/.local/bin/aider-mcp \
-  --aider-path "/home/tomo/project/000_devenv/ekp-forge/ekp_forge/orchestrator.py" \
-  --repo-path "$CURRENT_REPO_PATH"
+if ! curl -s http://127.0.0.1:11434/api/tags > /dev/null 2>&1; then
+    ollama serve &
+    disown
+    # 最大10秒待機
+fi
 ```
 
 ### 1.3. Claude Desktop での接続設定
@@ -173,3 +185,25 @@ DSCは、ターゲットリポジトリの `tests/` や `examples/` から Pytho
    `source_miner.py` は Git 2.25 以上の機能である `sparse-checkout` を自動的に試し、`tests` や `examples` に類似したフォルダツリー構造のみをピンポイントでクローンします。これにより、大規模なリポジトリでも数秒でマイニングが完了します。
 3. **ローカルリポジトリへの適用:**
    E2Eテストのように、ネットワークから取得できないクローズドな環境では、`direct_url.json` 内の URL をローカルディレクトリ（`file:///path/to/local/git/repo`）に向けることで、ローカルのGitリポジトリからテスト/サンプルをマイニングさせることが可能です。
+
+---
+
+## 5. 既知の問題：2-Tierモデルのプロトコル遵守問題
+
+### 問題
+2-Tier構成（Director/Manager=DeepSeek, Worker=Ollama 7B, MCPサーバー無し）では、トップ層のモデル（DeepSeek）がWorkerへの委譲プロトコルを守らず、自分でコードを書いてしまう問題が確認されています。
+
+### 原因
+1. **強制メカニズムの不在**: 3-Tier（MCPあり）ではMCPサーバーがプロトコルをコードで強制するが、2-Tierではトップ層の自律性に依存する
+2. **インセンティブの不一致**: DeepSeekはWorker（7B）より高品質なコードを生成できるため、「自分で書いた方が速い」という誘惑に負ける
+3. **Fixサイクルでの退化**: Worker（7B）に修正指示を出すと、ファイル全体を再生成して正常なコードまで破壊する傾向がある
+
+### 対策
+- **3-Tier（MCPあり）を使用する**: `ekp-forge-manager` MCPサーバー経由の `run_managed_task` でプロトコルを強制
+- **FixはManagerが担当する**: 修正はWorkerに委譲せず、Manager（DeepSeek）が `apply_diff` で外科的修正を行う
+- **監視**: 人間がトップ層の行動を監視し、プロトコル違反を指摘する（現時点では唯一の確実な対策）
+
+### 参考
+- 試験詳細: [`plans/2layer_abm_fbs_capability_plan.md`](../plans/2layer_abm_fbs_capability_plan.md)
+- 試験ログ: `/home/tomo/project/001_abm/mcp_test/abm_fbs_sim_2tier/`
+- Worker性能分析: [`QCD_EKP_VS_PURE.md`](../../001_abm/mcp_test/QCD_EKP_VS_PURE.md)
